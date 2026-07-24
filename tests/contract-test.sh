@@ -29,7 +29,14 @@ set -uo pipefail
 # --- Configuration (Provider Values for this test run) ----------------------
 NAMESPACE="${CONTRACT_TEST_NAMESPACE:-ok-observability}"
 RUN_ID="${CONTRACT_TEST_RUN_ID:-$(date +%s)-$$}"
-TIMEOUT="${CONTRACT_TEST_TIMEOUT:-120}"       # seconds to wait per async check
+# Default 240s (not 120): the slowest async check is the Prometheus scrape
+# of a FRESH ServiceMonitor, which waits on the Prometheus Operator to
+# reconcile + regenerate + hot-reload the scrape config. Measured live at
+# ~120–135s on ok-robotics — i.e. right at the old 120s edge, so 120 flaked
+# intermittently (metric DID arrive, just after the window; proven by step 6
+# passing in the same run where step 3 timed out). 240 gives realistic
+# head-room without masking a real failure. Override per-run if needed.
+TIMEOUT="${CONTRACT_TEST_TIMEOUT:-240}"       # seconds to wait per async check
 POLL_INTERVAL="${CONTRACT_TEST_POLL_INTERVAL:-5}"
 
 PROMETHEUS_URL="${PROMETHEUS_URL:-}"           # empty => port-forward is used
