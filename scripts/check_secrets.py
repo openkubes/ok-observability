@@ -5,10 +5,43 @@ Not a replacement for gitleaks in CI — a fast local guard against the obvious.
 Provider Values and credentials must never live in this repository (AGENTS.md).
 """
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def git_ignored(paths):
+    """Return the subset of `paths` that git ignores.
+
+    The purpose of this check is to stop secrets from being *committed*.
+    Git-ignored files can never be committed, so scanning them only produces
+    false positives (e.g. a developer's local `*.provider-values.yaml`, which
+    .gitignore explicitly anticipates). We ask git itself rather than
+    re-implementing .gitignore matching.
+
+    Fail-safe: if git is unavailable or this is not a git work tree, return an
+    empty set so EVERYTHING is scanned (preserves the guard in CI / fresh
+    checkouts / tarballs).
+    """
+    if not paths:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input="\n".join(str(p) for p in paths),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, OSError):
+        return set()  # no git binary -> scan everything
+    # 0 = some paths ignored, 1 = none ignored; anything else (e.g. 128 "not a
+    # git repository") -> fail safe and scan everything.
+    if proc.returncode not in (0, 1):
+        return set()
+    return {ROOT / line for line in proc.stdout.splitlines() if line}
 
 PATTERNS = [
     ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}")),
@@ -25,8 +58,14 @@ SKIP_SELF = Path(__file__).resolve()
 findings = []
 scanned = 0
 
-for f in sorted(ROOT.rglob("*")):
-    if not f.is_file() or SKIP_DIRS & set(f.parts) or f.resolve() == SKIP_SELF:
+candidates = [
+    f for f in sorted(ROOT.rglob("*"))
+    if f.is_file() and not (SKIP_DIRS & set(f.parts)) and f.resolve() != SKIP_SELF
+]
+ignored = git_ignored(candidates)
+
+for f in candidates:
+    if f in ignored:
         continue
     try:
         text = f.read_text(encoding="utf-8")
