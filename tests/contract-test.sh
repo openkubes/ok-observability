@@ -274,11 +274,13 @@ kind: Service
 metadata:
   name: ${PUSHGATEWAY_NAME}
   labels:
-    # `app` MUST be here in the Service's METADATA labels (not just in
-    # spec.selector): the ServiceMonitor below selects Services by their
+    # The 'app' label MUST be here in the Service's METADATA labels (not just
+    # in spec.selector): the ServiceMonitor below selects Services by their
     # metadata labels, so without this the operator generates no scrape
     # target and the pushed metric never reaches Prometheus (silent — the
-    # workload deploys fine, it just is never scraped).
+    # workload deploys fine, it is just never scraped).
+    # NOTE: no backticks in this heredoc — it is unquoted, so backticks would
+    # trigger command substitution.
     app: "${PUSHGATEWAY_NAME}"
     app.kubernetes.io/managed-by: ok-observability-contract-test
     run-id: "${RUN_ID}"
