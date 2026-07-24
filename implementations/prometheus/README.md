@@ -29,21 +29,28 @@ Reference implementation of ADR-Platform-018 guarantees **#1 Metrics** and
 | resources | `prometheus.prometheusSpec.resources` / `alertmanager.alertmanagerSpec.resources` | dev-sized defaults |
 | alert receiver | `alerting/alertmanager-values.yaml` | placeholder receiver, must be overridden |
 
-## Known issue, fixed: local-path + fsGroup
+## Known issue, fixed: subPath directory doesn't inherit fsGroup
 
-Found running against `ok-shared` (storageClass `local-path`): Prometheus
-panicked on startup with `permission denied` writing to `/prometheus`.
-`rancher/local-path-provisioner` backs PVs with a plain `hostPath` volume,
-and kubelet does not apply automatic `fsGroup` ownership changes for
-`hostPath` volumes — the chart's `runAsUser`/`fsGroup` settings are correct
-but never get applied to the actual directory. Fixed with an
-`initContainers` entry (`prometheus.prometheusSpec.initContainers`,
-`values.yaml`) that `chown`s the volume before Prometheus starts, the same
-pattern the OpenSearch chart already ships built-in. Harmless if a
-different `storageClass` (Longhorn, a cloud CSI driver) is used instead —
-just redundant in that case, not required. **The referenced volume name is
-unverified against every kube-prometheus-stack version** — see the comment
-in `values.yaml` for how to confirm/correct it.
+Found running against `ok-shared`: Prometheus panicked on startup with
+`permission denied` writing to `/prometheus`. First hypothesis — that
+`local-path-provisioner`'s PVs don't support `fsGroup` at all — was
+**disproven** by the fix's own diagnostic output: the PVC root was already
+correctly owned `1000:2000` and world-writable before any manual chown ran.
+
+Real cause: the "prometheus" container mounts the volume with
+`subPath: prometheus-db` (confirmed via `kubectl get pod ... -o json | jq
+'.spec.containers[] | select(.name=="prometheus") | .volumeMounts'`).
+Kubernetes auto-creates a missing subPath directory at pod start but does
+**not** apply `fsGroup`-based ownership to that auto-created directory —
+distinct from, and easy to confuse with, ownership of the PVC/mount root
+itself. Fixed with an `initContainers` entry
+(`prometheus.prometheusSpec.initContainers`, `values.yaml`) that creates
+and `chown`s `/prometheus/prometheus-db` specifically, not just
+`/prometheus`. Harmless if a different `storageClass` is used instead —
+redundant in that case, not required. **The referenced volume name and
+subPath are verified against the pinned kube-prometheus-stack version as
+of 2026-07-24 (live `kubectl` inspection), not guaranteed across version
+bumps** — see the comment in `values.yaml` for how to re-confirm.
 
 ## Usage
 
