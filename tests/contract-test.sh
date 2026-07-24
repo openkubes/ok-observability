@@ -7,7 +7,9 @@
 #
 # Requires: kubectl (pointed at the target cluster via KUBECONFIG), curl, jq.
 # Provider Values for this test are environment variables — see the
-# defaults below. None are secrets; a real alert-receiver endpoint is a
+# defaults below. Two are Provider-Value passwords: GRAFANA_PASSWORD (step 4)
+# and OPENSEARCH_PASSWORD (step 5); export them for a full run (never commit
+# them — they live in ok-cluster). A real alert-receiver endpoint is a
 # separate concern (see step 6 and CONTRACT_TEST_RECEIVER_CAPTURE_URL).
 #
 # Exit non-zero on ANY failed guarantee. Cleans up its own resources on
@@ -55,6 +57,14 @@ ALERTMANAGER_PORT="${ALERTMANAGER_PORT:-9093}"
 
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASSWORD="${GRAFANA_PASSWORD:-}"        # Provider Value; required for step 4
+
+# OpenSearch's security plugin is enabled (see implementations/opensearch):
+# it serves HTTPS with a self-signed demo cert and requires Basic Auth even
+# for reads. The reachability probe (step "preconditions") and the log search
+# (step 5) therefore speak https + -k + these credentials. Empty password =>
+# step 5 fails with an actionable message, not a silent pass.
+OPENSEARCH_USER="${OPENSEARCH_USER:-admin}"
+OPENSEARCH_PASSWORD="${OPENSEARCH_PASSWORD:-}"  # Provider Value; required for step 5
 
 # Optional: URL of a receiver-capture endpoint (e.g. a temporary
 # webhook-capture pod) to strictly verify alert DELIVERY, not just firing.
@@ -121,18 +131,25 @@ require_service() {
   kubectl -n "$2" get "svc/$1" >/dev/null 2>&1
 }
 
-# port_forward <service> <remote-port> <local-port> <health-path>
-# Verifies the forward is actually serving traffic before returning —
-# fails loudly (not a silent, later-misdiagnosed timeout) if it isn't.
+# port_forward <service> <remote-port> <local-port> <health-path> [scheme] [auth]
+# scheme defaults to http; pass "https" for TLS services (adds -k for the
+# self-signed cert). auth is an optional "user:password" for Basic Auth
+# (OpenSearch's security plugin). Verifies the forward is actually serving
+# traffic before returning — fails loudly (not a silent, later-misdiagnosed
+# timeout) if it isn't.
 port_forward() {
-  local svc="$1" remote="$2" local_port="$3" health="${4:-/}"
+  local svc="$1" remote="$2" local_port="$3" health="${4:-/}" scheme="${5:-http}" auth="${6:-}"
   kubectl -n "$NAMESPACE" port-forward "svc/${svc}" "${local_port}:${remote}" \
     >/tmp/pf-"${svc}"-"${RUN_ID}".log 2>&1 &
   local pid=$!
   PF_PIDS+=("$pid")
 
+  local opts=(-sf -o /dev/null)
+  [ "$scheme" = "https" ] && opts+=(-k)
+  [ -n "$auth" ] && opts+=(-u "$auth")
+
   local waited=0
-  until curl -sf -o /dev/null "http://localhost:${local_port}${health}" 2>/dev/null; do
+  until curl "${opts[@]}" "${scheme}://localhost:${local_port}${health}" 2>/dev/null; do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "  port-forward to svc/${svc} exited early:" >&2
       sed 's/^/    /' "/tmp/pf-${svc}-${RUN_ID}.log" >&2
@@ -210,10 +227,11 @@ if [ -z "$GRAFANA_URL" ]; then
 fi
 if [ -z "$OPENSEARCH_URL" ]; then
   if require_service "$OPENSEARCH_SVC" "$NAMESPACE" \
-      && port_forward "$OPENSEARCH_SVC" "$OPENSEARCH_PORT" "$LOCAL_OPENSEARCH_PORT" "/"; then
-    OPENSEARCH_URL="http://localhost:${LOCAL_OPENSEARCH_PORT}"
+      && port_forward "$OPENSEARCH_SVC" "$OPENSEARCH_PORT" "$LOCAL_OPENSEARCH_PORT" \
+           "/_cluster/health" "https" "${OPENSEARCH_USER}:${OPENSEARCH_PASSWORD}"; then
+    OPENSEARCH_URL="https://localhost:${LOCAL_OPENSEARCH_PORT}"
   else
-    fail "svc/${OPENSEARCH_SVC} not reachable in namespace ${NAMESPACE} — is implementations/opensearch installed here?"
+    fail "svc/${OPENSEARCH_SVC} not reachable/authenticated in namespace ${NAMESPACE} — is implementations/opensearch installed, and is OPENSEARCH_PASSWORD set? (security plugin = HTTPS + Basic Auth)"
     OS_AVAILABLE=0
   fi
 fi
@@ -256,6 +274,12 @@ kind: Service
 metadata:
   name: ${PUSHGATEWAY_NAME}
   labels:
+    # `app` MUST be here in the Service's METADATA labels (not just in
+    # spec.selector): the ServiceMonitor below selects Services by their
+    # metadata labels, so without this the operator generates no scrape
+    # target and the pushed metric never reaches Prometheus (silent — the
+    # workload deploys fine, it just is never scraped).
+    app: "${PUSHGATEWAY_NAME}"
     app.kubernetes.io/managed-by: ok-observability-contract-test
     run-id: "${RUN_ID}"
 spec:
@@ -350,7 +374,7 @@ else
     --image=busybox --restart=Never --command -- echo "${LOG_MARKER}" >/dev/null 2>&1
 
   if wait_for "log marker searchable in OpenSearch" bash -c \
-      "set -o pipefail; curl -sf '${OPENSEARCH_URL}/ok-observability-logs*/_search' \
+      "set -o pipefail; curl -sk -u '${OPENSEARCH_USER}:${OPENSEARCH_PASSWORD}' '${OPENSEARCH_URL}/ok-observability-logs*/_search' \
          -H 'Content-Type: application/json' \
          -d '{\"query\":{\"match_phrase\":{\"log\":\"${LOG_MARKER}\"}}}' \
        | jq -e '.hits.total.value > 0'"; then

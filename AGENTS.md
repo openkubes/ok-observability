@@ -85,6 +85,13 @@ to OK-79. Do not "fix" this by weakening the target.
   pattern) — `make evidence` produces the text block; a human posts it.
 - Release tags are set when the capability is fully deployed (ADR Accepted +
   Implementation Profile + Provider Values operational), not at commit time.
+- Provider Values are `*.provider-values.yaml` — git-ignored on purpose so a
+  developer can keep a local one for live testing without committing secrets
+  (they belong in ok-cluster, never here). `make verify`'s secret scan
+  (`scripts/check_secrets.py`) deliberately **skips git-ignored files** via
+  `git check-ignore`, so a local provider-values file does not make `verify`
+  fail. The guard is unchanged for anything committable, and falls back to
+  scanning everything when run outside a git work tree (CI / tarball).
 
 ## Repository map
 

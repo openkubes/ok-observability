@@ -76,6 +76,11 @@ weaker, documented pass (firing only), not a silent gap.
 ```shell
 export KUBECONFIG=~/.kube/<target-cluster>.yaml
 export GRAFANA_PASSWORD=<the cluster's Grafana admin password>
+# OpenSearch's security plugin serves HTTPS + Basic Auth, so step 5 needs
+# the admin credentials too (must match OPENSEARCH_INITIAL_ADMIN_PASSWORD).
+# Without OPENSEARCH_PASSWORD, step 5 fails with an actionable message
+# rather than silently passing:
+export OPENSEARCH_PASSWORD=<the cluster's OpenSearch admin password>
 # Default namespace matches profiles/ok-observability-standard/README.md's
 # recommended install namespace; override if you installed elsewhere:
 export CONTRACT_TEST_NAMESPACE=ok-observability
