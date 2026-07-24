@@ -29,10 +29,24 @@ follow-up — flagged in `values.yaml` rather than silently omitted.
 
 ## Verification status
 
-`helm lint`/`helm template` run clean against `profiles/ok-observability-standard`
-on 2026-07-24 (see `implementations/grafana/README.md` for details — same
-verification pass covered all four charts). Not yet verified: an actual
-`helm install` on a live cluster.
+`helm lint`/`helm template` ran clean on 2026-07-24, but that pass gave a
+**false confidence signal** for this chart specifically: a `helm template`
+grep for a Service named `ok-observability-opensearch` (the
+`fullnameOverride` value) appeared to match, but that match was a
+different resource — not the actual Service consumed by fluent-bit.
+Running a real `helm install` against `ok-shared` revealed fluent-bit
+failing DNS resolution (`getaddrinfo(...): Domain name not found`) against
+that assumed name. The real Service, confirmed via `kubectl get svc`, is
+**`opensearch-cluster-master`** (+ `opensearch-cluster-master-headless`) —
+the opensearch-project/helm-charts chart names its Service from
+`clusterName` + node role, not from `fullnameOverride`/the standard Helm
+fullname convention. Fixed in `values.yaml` (fluent-bit output `Host`) and
+`tests/contract-test.sh` (`OPENSEARCH_SVC` default).
+
+Lesson for this repo: a `helm template` grep match is not sufficient
+verification for a chart whose naming doesn't follow the standard Helm
+fullname helper — a live install surfaces things a template render can
+silently get wrong.
 
 ## Usage
 

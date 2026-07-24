@@ -78,12 +78,21 @@ and not recommended past a one-off test.
 `helm dependency update`, `helm lint`, and `helm template` were run against
 this chart tree on 2026-07-24: all 4 charts lint clean (only an
 informational "icon is recommended" notice), template renders without
-error, and all four assumed Service names (`ok-observability-prometheus`,
-`ok-observability-grafana`, `ok-observability-opensearch`,
-`ok-observability-alertmanager`) were confirmed against the rendered
-output. `make verify` additionally runs a structural stand-in
-(`scripts/check_charts.py`) for environments without a `helm` binary.
+error. Three of four assumed Service names were correctly confirmed this
+way: `ok-observability-prometheus`, `ok-observability-grafana`,
+`ok-observability-alertmanager`. The fourth, OpenSearch, was a **false
+positive** — the template grep match wasn't the real Service; see
+`implementations/opensearch/README.md` "Verification status" for the real
+name (`opensearch-cluster-master`), found only by actually installing
+against `ok-shared`. `make verify` additionally runs a structural stand-in
+(`scripts/check_charts.py`) for environments without a `helm` binary — it
+would not have caught this either, since it doesn't render templates.
 
-Not yet verified: an actual `helm install` on a live cluster, and the
-contract test (`tests/contract-test.sh`) running end-to-end against it —
-that's the next step.
+A subsequent live `helm install` against `ok-shared` (2026-07-24) also
+surfaced: node-exporter/fluent-bit rejected by cluster-default Pod
+Security Admission (see "Namespace precondition" above), a Prometheus
+`permission denied` panic on `local-path` storage (see
+`implementations/prometheus/README.md`), and OpenSearch's required
+`OPENSEARCH_INITIAL_ADMIN_PASSWORD` (see `implementations/opensearch/README.md`).
+All fixed. Contract test (`tests/contract-test.sh`) run end-to-end against
+a fully-healthy install is still pending — that's the next step.

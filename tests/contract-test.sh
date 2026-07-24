@@ -35,14 +35,20 @@ GRAFANA_URL="${GRAFANA_URL:-}"
 OPENSEARCH_URL="${OPENSEARCH_URL:-}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-}"
 
-# Service names as set by implementations/*/values.yaml fullnameOverride.
-# Confirmed via `helm template` against profiles/ok-observability-standard
-# on 2026-07-24 — see implementations/*/README.md "Verification status".
+# Service names as set by implementations/*/values.yaml fullnameOverride,
+# confirmed via `helm template` on 2026-07-24 — EXCEPT OpenSearch, whose
+# Service name is NOT controlled by fullnameOverride (see
+# implementations/opensearch/values.yaml and README "Verification status"):
+# the `helm template` grep match for OpenSearch turned out to be a
+# different resource, not the actual Service. The real name
+# (opensearch-cluster-master) was only found by running against a live
+# cluster and reading `kubectl get svc` — a live run is a stronger check
+# than a template grep for exactly this reason.
 PROMETHEUS_SVC="${PROMETHEUS_SVC:-ok-observability-prometheus}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
 GRAFANA_SVC="${GRAFANA_SVC:-ok-observability-grafana}"
 GRAFANA_PORT="${GRAFANA_PORT:-80}"
-OPENSEARCH_SVC="${OPENSEARCH_SVC:-ok-observability-opensearch}"
+OPENSEARCH_SVC="${OPENSEARCH_SVC:-opensearch-cluster-master}"
 OPENSEARCH_PORT="${OPENSEARCH_PORT:-9200}"
 ALERTMANAGER_SVC="${ALERTMANAGER_SVC:-ok-observability-alertmanager}"
 ALERTMANAGER_PORT="${ALERTMANAGER_PORT:-9093}"

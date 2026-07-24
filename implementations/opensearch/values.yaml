@@ -4,6 +4,14 @@
 # are Provider Values (contract v1, "Logs" guarantee).
 
 opensearch:
+  # NOTE: fullnameOverride does NOT control this chart's Service name — the
+  # opensearch-project/helm-charts chart names its Service from
+  # `clusterName` + node role, not the standard Helm fullname convention.
+  # Found running against a live cluster: the real Service is
+  # `opensearch-cluster-master` (+ `-headless`) regardless of this setting.
+  # fullnameOverride is kept for other resources (StatefulSet, etc.) but do
+  # NOT assume it controls the Service name — see fluent-bit.config.outputs
+  # below, which points at the confirmed real name.
   fullnameOverride: ok-observability-opensearch
 
   # Single-node-capable for v1; HA is an explicit follow-up (not required by
@@ -52,7 +60,7 @@ fluent-bit:
       [OUTPUT]
           Name            opensearch
           Match           *
-          Host            ok-observability-opensearch
+          Host            opensearch-cluster-master
           Port            9200
           Index           ok-observability-logs
           Suppress_Type_Name On
