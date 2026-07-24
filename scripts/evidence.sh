@@ -4,7 +4,7 @@
 # Baseline per OK-100: evidence is a Jira comment (OK-15/OK-60 pattern).
 # This script only PRODUCES the text — a human reviews and posts it.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 ts=$(date -u +"%Y-%m-%d %H:%M UTC")
 commit=$(git rev-parse --short HEAD 2>/dev/null || echo "n/a")
