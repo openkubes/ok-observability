@@ -29,28 +29,50 @@ Reference implementation of ADR-Platform-018 guarantees **#1 Metrics** and
 | resources | `prometheus.prometheusSpec.resources` / `alertmanager.alertmanagerSpec.resources` | dev-sized defaults |
 | alert receiver | `alerting/alertmanager-values.yaml` | placeholder receiver, must be overridden |
 
-## Known issue, fixed: subPath directory doesn't inherit fsGroup
+## Known issue, fixed: permission denied writing to /prometheus
 
 Found running against `ok-shared`: Prometheus panicked on startup with
-`permission denied` writing to `/prometheus`. First hypothesis — that
-`local-path-provisioner`'s PVs don't support `fsGroup` at all — was
-**disproven** by the fix's own diagnostic output: the PVC root was already
-correctly owned `1000:2000` and world-writable before any manual chown ran.
+`permission denied` writing to `/prometheus`. This took three rounds of
+live investigation to pin down correctly — both intermediate hypotheses
+are recorded here because they were reasonable, evidence-based, and wrong,
+and the process of ruling them out is exactly the "practical viability"
+finding OK-79 asked for:
 
-Real cause: the "prometheus" container mounts the volume with
-`subPath: prometheus-db` (confirmed via `kubectl get pod ... -o json | jq
-'.spec.containers[] | select(.name=="prometheus") | .volumeMounts'`).
-Kubernetes auto-creates a missing subPath directory at pod start but does
-**not** apply `fsGroup`-based ownership to that auto-created directory —
-distinct from, and easy to confuse with, ownership of the PVC/mount root
-itself. Fixed with an `initContainers` entry
-(`prometheus.prometheusSpec.initContainers`, `values.yaml`) that creates
-and `chown`s `/prometheus/prometheus-db` specifically, not just
-`/prometheus`. Harmless if a different `storageClass` is used instead —
-redundant in that case, not required. **The referenced volume name and
-subPath are verified against the pinned kube-prometheus-stack version as
-of 2026-07-24 (live `kubectl` inspection), not guaranteed across version
-bumps** — see the comment in `values.yaml` for how to re-confirm.
+1. **Disproven:** "`local-path-provisioner` doesn't support `fsGroup` at
+   all." The PVC root was already correctly owned `1000:2000` and
+   world-writable before any manual chown ran — ownership was never wrong
+   at the mount root.
+2. **Disproven (partially):** "the `subPath`-auto-created directory
+   doesn't inherit `fsGroup`." True as far as it goes — Kubernetes does
+   auto-create a missing `subPath` directory without applying `fsGroup`
+   ownership to it, and fixing that ownership *was* necessary — but a
+   write test as the exact target UID/GID still failed afterward when
+   also using `readOnlyRootFilesystem: true`, proving ownership alone
+   wasn't the full story.
+3. **Confirmed root cause:** the operator-generated "prometheus" container
+   sets `readOnlyRootFilesystem: true` **and** mounts the data volume via
+   `subPath: prometheus-db`. That combination made the subPath mount
+   behave as read-only on this cluster's container runtime — reproduced
+   directly by replicating both settings in a throwaway container and
+   getting the identical `permission denied`.
+
+Fix has two parts, both in `values.yaml`:
+- `prometheus.prometheusSpec.initContainers`: creates and `chown`s
+  `/prometheus/prometheus-db` (still needed on its own — see point 2)
+- `prometheus.prometheusSpec.containers`: overrides the generated
+  "prometheus" container's `readOnlyRootFilesystem` to `false`, using
+  Prometheus Operator's supported mechanism for patching
+  operator-generated containers by name
+
+Harmless if a different `storageClass` is used — the `chown` step is
+redundant but not required there; the `readOnlyRootFilesystem` override is
+needed regardless of storage class, since the cause is the subPath
+mount/runtime interaction, not the storage backend itself.
+
+**The referenced volume name and subPath are verified against the pinned
+kube-prometheus-stack version as of 2026-07-24 (live `kubectl` inspection),
+not guaranteed across version bumps** — see the comment in `values.yaml`
+for how to re-confirm.
 
 ## Usage
 

@@ -44,26 +44,37 @@ kube-prometheus-stack:
       ruleSelectorNilUsesHelmValues: false
 
       # Fix for a real failure found running against ok-shared: Prometheus
-      # panicked with "open /prometheus/queries.active: permission denied"
-      # even though the PVC root was already correctly owned 1000:2000,
-      # world-writable (confirmed via this init container's own diagnostic
-      # output before assuming a fix was even needed — see git history for
-      # the disproven "local-path doesn't support fsGroup" theory this
-      # replaced). Real cause: the "prometheus" container mounts the volume
-      # with `subPath: prometheus-db` (visible via
-      # `kubectl get pod ... -o json | jq '.spec.containers[] |
-      # select(.name=="prometheus") | .volumeMounts'`) — Kubernetes
-      # auto-creates a missing subPath directory at pod start, but does NOT
-      # apply fsGroup-based ownership to that auto-created directory (a
-      # known Kubernetes subPath behavior, distinct from and easy to
-      # confuse with the storage-class-level fsGroup question). The fix
-      # must create/chown the exact subPath, not just the PVC root.
+      # panicked with "open /prometheus/queries.active: permission denied".
+      # Root cause, confirmed through a three-step live investigation (see
+      # git history: 270d54a, a8d4494, 075d3dd for the two disproven
+      # hypotheses and the diagnostics that ruled them out):
+      #   1. NOT "local-path-provisioner doesn't support fsGroup" — the PVC
+      #      root was already correctly owned 1000:2000 before any fix ran.
+      #   2. NOT plain subPath-directory-ownership either, in isolation —
+      #      a write test as the exact same UID/GID succeeded once ownership
+      #      was fixed... but only when NOT combined with
+      #      readOnlyRootFilesystem.
+      #   3. THE actual cause: the operator-generated "prometheus" container
+      #      sets `readOnlyRootFilesystem: true` AND mounts the data volume
+      #      via `subPath: prometheus-db`. That specific combination made
+      #      the subPath mount behave as read-only on this cluster's
+      #      container runtime, confirmed by reproducing the identical
+      #      "permission denied" with a throwaway container replicating
+      #      both settings exactly.
+      # Fix has two parts:
+      #   a) chown the subPath directory (Kubernetes auto-creates a missing
+      #      subPath dir but doesn't apply fsGroup ownership to it — still
+      #      necessary on its own, independent of the readOnlyRootFilesystem
+      #      finding)
+      #   b) override the "prometheus" container's readOnlyRootFilesystem
+      #      to false via prometheusSpec.containers (Prometheus Operator's
+      #      supported mechanism for patching operator-generated containers
+      #      by name)
       #
-      # UNVERIFIED volume name / subPath: derived from the observed PVC
-      # name and a live `kubectl get pod ... -o json` inspection on
-      # 2026-07-24 against kube-prometheus-stack as pinned in Chart.yaml.
-      # Re-verify both (`.spec.volumes[*].name` and the "prometheus"
-      # container's volumeMounts subPath) after any chart version bump.
+      # UNVERIFIED volume name / subPath: derived from a live `kubectl get
+      # pod ... -o json` inspection on 2026-07-24 against kube-prometheus-stack
+      # as pinned in Chart.yaml. Re-verify after any chart version bump —
+      # see implementations/prometheus/README.md.
       initContainers:
         - name: fix-local-path-fsgroup
           image: busybox:1.36
@@ -94,76 +105,14 @@ kube-prometheus-stack:
             - name: prometheus-ok-observability-prometheus-db
               mountPath: /prometheus
 
-        # Second opinion: the ownership/permissions *look* correct after
-        # the fix above, yet Prometheus still panicked with the identical
-        # "permission denied" — so verify write access using the EXACT
-        # same effective identity the "prometheus" container runs as
-        # (runAsUser 1000 / runAsGroup 2000, inherited from the pod-level
-        # securityContext), rather than trusting `ls -l` output alone.
-        # This closes the gap between "looks right" and "is actually
-        # writable by that UID" without needing to exec into a container
-        # that never stays up long enough to attach to.
-        - name: verify-write-as-app-user
-          image: busybox:1.36
-          command:
-            - sh
-            - -c
-            - |
-              echo "Verifying write access to /prometheus/prometheus-db as $(id):"
-              if touch /prometheus/prometheus-db/.write-test 2>&1; then
-                echo "WRITE OK"
-                rm -f /prometheus/prometheus-db/.write-test
-              else
-                echo "WRITE FAILED — see error above"
-                exit 1
-              fi
+      # Part (b) of the fix above: the operator generates a "prometheus"
+      # container with readOnlyRootFilesystem: true; this patches just that
+      # one field by container name, per Prometheus Operator's documented
+      # mechanism for overriding generated containers.
+      containers:
+        - name: prometheus
           securityContext:
-            runAsUser: 1000
-            runAsGroup: 2000
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-          volumeMounts:
-            - name: prometheus-ok-observability-prometheus-db
-              mountPath: /prometheus
-
-        # Third opinion, testing a specific hypothesis: the write test
-        # above succeeded WITHOUT readOnlyRootFilesystem set and WITHOUT
-        # subPath, but the real "prometheus" container has BOTH
-        # readOnlyRootFilesystem: true AND mounts via subPath: prometheus-db
-        # (confirmed via `kubectl get pod ... -o json | jq .spec.containers[]
-        # | select(.name=="prometheus") | {securityContext, volumeMounts}`).
-        # There are documented cases where a subPath-mounted volume
-        # unexpectedly inherits read-only behavior from
-        # readOnlyRootFilesystem depending on the container runtime's mount
-        # propagation handling. This container replicates the mount EXACTLY
-        # (same securityContext, same subPath) to test that specific
-        # combination in isolation before committing to a fix.
-        - name: verify-write-with-readonly-rootfs
-          image: busybox:1.36
-          command:
-            - sh
-            - -c
-            - |
-              echo "Verifying write access to /prometheus (subPath: prometheus-db) as $(id), with readOnlyRootFilesystem: true:"
-              if touch /prometheus/.write-test-ro 2>&1; then
-                echo "WRITE OK (readOnlyRootFilesystem + subPath does not explain the failure)"
-                rm -f /prometheus/.write-test-ro
-              else
-                echo "WRITE FAILED — readOnlyRootFilesystem + subPath interaction confirmed"
-                exit 1
-              fi
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 2000
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: prometheus-ok-observability-prometheus-db
-              mountPath: /prometheus
-              subPath: prometheus-db
+            readOnlyRootFilesystem: false
 
   alertmanager:
     alertmanagerSpec:
