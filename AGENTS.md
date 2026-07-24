@@ -8,8 +8,10 @@ hierarchy and introduces **no** new architecture decisions, contracts, or
 normative platform requirements. If this file and an ADR disagree, the ADR wins
 — and this file has a bug (fix it via PR).
 
-Status: pilot artifact of OK-100 (Spike: Harness Engineering pilot on
-ok-observability). Advisory until the spike concludes with **adopt**.
+Status: adopted. The OK-100 Harness Engineering pilot concluded **adopt**
+(2026-07-24); this guide and the `make verify`/`conformance`/`evidence` trio
+are the repo standard. Generalizing to a platform-wide agent harness remains
+out of scope until a second agent consumer forces it.
 
 ## Purpose of this repository
 
@@ -49,10 +51,11 @@ make evidence      # verification summary in the Jira-comment evidence format
 All three targets are deterministic and independent of any LLM. An AI review
 may additionally comment on a PR — it is **advisory only**, never a gate.
 
-**Conformance status:** the contract test is specified in `tests/README.md`
-but **not yet implemented** — it is a deliverable of OK-79 (ok-cluster
-integration). Until then `make conformance` fails deliberately with a pointer
-to OK-79. Do not "fix" this by weakening the target.
+**Conformance status:** the contract test is implemented
+(`tests/contract-test.sh`, delivered via OK-79) and has passed on two
+independent clusters (ok-shared, ok-robotics), verifying all five guarantees.
+It needs a target cluster (kubeconfig) and receiver endpoint, supplied as
+Provider Values by ok-cluster. Do not weaken the target to make a change pass.
 
 ## Prohibited and restricted changes
 
