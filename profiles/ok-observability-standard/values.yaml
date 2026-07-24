@@ -21,7 +21,10 @@ ok-observability-grafana:
   grafana:
     persistence:
       storageClassName: "" # Provider Value
-    adminPassword: "" # Provider Value — required, must be set at install time
+    # Admin password is NOT set here — it is read from the Secret
+    # ok-observability-credentials via admin.existingSecret (see
+    # implementations/grafana/values.yaml). adminPassword would be ignored when
+    # existingSecret is present, so it is omitted to avoid confusion.
 
 ok-observability-opensearch:
   opensearch:

@@ -41,6 +41,13 @@ grafana:
       labelValue: "1"
       searchNamespace: ALL
 
-  adminPassword: "" # Provider Value — must be set at install time; never commit a real value
+  # Admin credentials come from the Kubernetes Secret `ok-observability-credentials`
+  # (created by ok-cluster `make install-observability`, later Vault-synced via
+  # External Secrets — the chart never sees a plaintext password). Keys:
+  # grafana-admin-user / grafana-admin-password.
+  admin:
+    existingSecret: ok-observability-credentials
+    userKey: grafana-admin-user
+    passwordKey: grafana-admin-password
   ingress:
     enabled: false # Provider Value — external exposure requires an ADR-010 ingress decision

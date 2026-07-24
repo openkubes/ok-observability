@@ -22,7 +22,7 @@ subchart wired implicitly through kube-prometheus-stack's values.
 | Value | Where | Default here |
 |---|---|---|
 | `storageClassName` | `persistence.storageClassName` | `""` (cluster default) |
-| `adminPassword` | `adminPassword` | `""` — must be set at install time, never committed |
+| admin password | Secret `ok-observability-credentials` (`admin.existingSecret`, keys `grafana-admin-user`/`grafana-admin-password`) | created by ok-cluster `make install-observability`; later Vault-synced. The chart never sees a plaintext password. |
 | ingress/access | `ingress.enabled` | `false`; requires an ADR-010 decision to expose externally |
 
 ## Verification status

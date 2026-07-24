@@ -32,13 +32,17 @@ opensearch:
     limits:
       memory: 2Gi
 
-  # REQUIRED Provider Value (not optional, unlike Grafana's adminPassword):
-  # OpenSearch 2.12+ refuses to start at all without this set — the
-  # container exits immediately ("No custom admin password found").
-  # Found running the empty default against a live cluster (OK-79).
+  # Admin password comes from the Kubernetes Secret `ok-observability-credentials`
+  # (key: opensearch-admin-password), created by ok-cluster
+  # `make install-observability` (later Vault-synced via External Secrets — the
+  # chart never sees plaintext). OpenSearch 2.12+ refuses to start without this
+  # set; found running the empty default against a live cluster (OK-79).
   extraEnvs:
     - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
-      value: "" # MUST be overridden at install time; empty = container will not start
+      valueFrom:
+        secretKeyRef:
+          name: ok-observability-credentials
+          key: opensearch-admin-password
 
   # Index lifecycle / retention: no default ILM policy is shipped in v1.
   # Applying one is a Provider Value follow-up (index_state_management via
@@ -47,6 +51,17 @@ opensearch:
 
 fluent-bit:
   fullnameOverride: ok-observability-log-collector
+
+  # OpenSearch admin password injected from the shared credentials Secret and
+  # referenced as ${OPENSEARCH_PASSWORD} in the OUTPUT below. Fluent Bit expands
+  # ${VAR} from the environment in its classic config — so no plaintext password
+  # (and no inline-comment footgun) ever lives in this file.
+  env:
+    - name: OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: ok-observability-credentials
+          key: opensearch-admin-password
 
   resources:
     requests:
@@ -75,16 +90,12 @@ fluent-bit:
           tls             On
           tls.verify      Off
           HTTP_User       admin
-          # HTTP_Passwd is a REQUIRED Provider Value — it MUST match
-          # opensearch.extraEnvs[].OPENSEARCH_INITIAL_ADMIN_PASSWORD above.
-          # WARNING: fluent-bit's classic config does NOT support inline
-          # (trailing) comments — anything after a value on the SAME line
-          # becomes PART of the value. A trailing "# ..." here previously
-          # turned the password into "<pw>   # ..." and caused a live 401
-          # loop against OpenSearch's Bulk API. Only full-line comments
-          # (# at the start of the line) are safe. Override at install time;
-          # the empty default below will not authenticate.
-          HTTP_Passwd     ""
+          # ${OPENSEARCH_PASSWORD} is expanded by Fluent Bit from the env var
+          # injected above (from Secret ok-observability-credentials) — no
+          # plaintext password lives in this file. NOTE: classic-config inline
+          # (trailing) comments are still unsafe (text after a value becomes
+          # part of the value), so keep any notes on their own lines.
+          HTTP_Passwd     ${OPENSEARCH_PASSWORD}
     # Default logging policy (contract guarantee #3): all container logs.
     # Exclusions are a Provider Value — add a [FILTER] grep/exclude block
     # here per cluster (e.g. to drop noisy system namespaces).

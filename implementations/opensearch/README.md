@@ -22,8 +22,8 @@ follow-up — flagged in `values.yaml` rather than silently omitted.
 | Value | Where | Default here |
 |---|---|---|
 | `storageClass` | `opensearch.persistence.storageClass` | `""` (cluster default) |
-| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | `opensearch.extraEnvs` | `""` — **REQUIRED**, install fails without it (OpenSearch 2.12+) |
-| `HTTP_Passwd` (fluent-bit → OpenSearch) | `fluent-bit.config.outputs` | `""` — **REQUIRED**, must equal the value above; fluent-bit cannot authenticate to OpenSearch's Security Plugin otherwise |
+| admin password | Secret `ok-observability-credentials` (key `opensearch-admin-password`) via `opensearch.extraEnvs[].valueFrom.secretKeyRef` | created by ok-cluster `make install-observability`; later Vault-synced. **REQUIRED** — OpenSearch 2.12+ won't start without it. |
+| fluent-bit → OpenSearch auth | same Secret, injected as env `OPENSEARCH_PASSWORD` and referenced as `${OPENSEARCH_PASSWORD}` in `fluent-bit.config.outputs` | no plaintext in values; one Secret is the single source of truth for both sides |
 | retention / ILM | not yet implemented | see "Known gap" above |
 | log exclusions | `fluent-bit.config.outputs` (add a `[FILTER]` block) | none — all container logs |
 | resources | `opensearch.resources` / `fluent-bit.resources` | dev-sized defaults |
