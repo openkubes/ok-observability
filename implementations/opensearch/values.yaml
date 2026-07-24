@@ -24,6 +24,14 @@ opensearch:
     limits:
       memory: 2Gi
 
+  # REQUIRED Provider Value (not optional, unlike Grafana's adminPassword):
+  # OpenSearch 2.12+ refuses to start at all without this set — the
+  # container exits immediately ("No custom admin password found").
+  # Found running the empty default against a live cluster (OK-79).
+  extraEnvs:
+    - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      value: "" # MUST be overridden at install time; empty = container will not start
+
   # Index lifecycle / retention: no default ILM policy is shipped in v1.
   # Applying one is a Provider Value follow-up (index_state_management via
   # OpenSearch's ISM plugin, or an external curator CronJob) — tracked as a

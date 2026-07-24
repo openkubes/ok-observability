@@ -22,6 +22,7 @@ follow-up — flagged in `values.yaml` rather than silently omitted.
 | Value | Where | Default here |
 |---|---|---|
 | `storageClass` | `opensearch.persistence.storageClass` | `""` (cluster default) |
+| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | `opensearch.extraEnvs` | `""` — **REQUIRED**, install fails without it (OpenSearch 2.12+) |
 | retention / ILM | not yet implemented | see "Known gap" above |
 | log exclusions | `fluent-bit.config.outputs` (add a `[FILTER]` block) | none — all container logs |
 | resources | `opensearch.resources` / `fluent-bit.resources` | dev-sized defaults |
