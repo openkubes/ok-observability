@@ -76,6 +76,9 @@ weaker, documented pass (firing only), not a silent gap.
 ```shell
 export KUBECONFIG=~/.kube/<target-cluster>.yaml
 export GRAFANA_PASSWORD=<the cluster's Grafana admin password>
+# Default namespace matches profiles/ok-observability-standard/README.md's
+# recommended install namespace; override if you installed elsewhere:
+export CONTRACT_TEST_NAMESPACE=ok-observability
 # Optional, for strict alert-delivery verification:
 export CONTRACT_TEST_RECEIVER_CAPTURE_URL=http://<capture-endpoint>
 

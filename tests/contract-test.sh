@@ -25,7 +25,7 @@
 set -uo pipefail
 
 # --- Configuration (Provider Values for this test run) ----------------------
-NAMESPACE="${CONTRACT_TEST_NAMESPACE:-default}"
+NAMESPACE="${CONTRACT_TEST_NAMESPACE:-ok-observability}"
 RUN_ID="${CONTRACT_TEST_RUN_ID:-$(date +%s)-$$}"
 TIMEOUT="${CONTRACT_TEST_TIMEOUT:-120}"       # seconds to wait per async check
 POLL_INTERVAL="${CONTRACT_TEST_POLL_INTERVAL:-5}"

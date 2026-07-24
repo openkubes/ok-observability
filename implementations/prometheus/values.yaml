@@ -43,6 +43,37 @@ kube-prometheus-stack:
       podMonitorSelectorNilUsesHelmValues: false
       ruleSelectorNilUsesHelmValues: false
 
+      # Fix for a real failure found running against ok-shared (local-path
+      # storage class): "local-path-provisioner" backs its PVs with a plain
+      # hostPath volume, and kubelet does NOT apply automatic fsGroup
+      # ownership changes for hostPath volumes (unlike most other volume
+      # plugins) — Prometheus then panics on startup with
+      # "open /prometheus/queries.active: permission denied", even though
+      # runAsUser/runAsGroup/fsGroup are all set correctly. The
+      # OpenSearch chart already ships an equivalent init container for the
+      # same reason (see implementations/opensearch) — kube-prometheus-stack
+      # does not, so we add one here.
+      #
+      # UNVERIFIED volume name: derived from the observed PVC name
+      # (prometheus-ok-observability-prometheus-db-prometheus-ok-observability-prometheus-0)
+      # via the StatefulSet claim-template naming convention
+      # (<claimTemplateName>-<podName>). Confirm with:
+      #   kubectl get pod prometheus-ok-observability-prometheus-0 \
+      #     -o jsonpath='{.spec.volumes[*].name}'
+      # and correct the mountPath's `name:` below if it differs (e.g. after
+      # a kube-prometheus-stack/Prometheus Operator version bump).
+      initContainers:
+        - name: fix-local-path-fsgroup
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 1000:2000 /prometheus"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: prometheus-ok-observability-prometheus-db
+              mountPath: /prometheus
+
   alertmanager:
     alertmanagerSpec:
       resources:
