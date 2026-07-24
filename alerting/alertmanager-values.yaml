@@ -1,0 +1,20 @@
+# Values fragment — layered on top of implementations/prometheus at install
+# time (see README.md), NOT installed standalone. Keeps alert routing and
+# receivers (a Provider Value) out of implementations/prometheus/values.yaml.
+#
+# PLACEHOLDER receiver below has no working endpoint. Override per cluster.
+
+kube-prometheus-stack:
+  alertmanager:
+    config:
+      route:
+        receiver: default-receiver
+        group_by: ["alertname", "namespace"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+      receivers:
+        - name: default-receiver
+          # Provider Value — replace with a real receiver, e.g.:
+          # webhook_configs:
+          #   - url: https://example.invalid/alerts

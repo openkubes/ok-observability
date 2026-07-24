@@ -90,14 +90,23 @@ to OK-79. Do not "fix" this by weakening the target.
 
 ```
 contracts/        Observability Capability Contract (versioned, ADR-governed)
-implementations/  Reference implementation assets (prometheus/, grafana/, opensearch/)
-profiles/         Implementation profiles (ok-observability-standard/)
-dashboards/       Platform Grafana dashboards
-alerting/         Alertmanager config, Prometheus rules
+implementations/  Reference implementation assets — each a thin Helm chart:
+                   prometheus/ (metrics+alerting), grafana/ (dashboards),
+                   opensearch/ (logs). See each README.md for Provider Values.
+profiles/         Implementation profiles — ok-observability-standard/ composes
+                   the three implementations/* into one installable chart
+dashboards/       Platform Grafana dashboards (ConfigMaps, sidecar-discovered)
+alerting/         PrometheusRule manifests + Alertmanager values fragment
 tests/            Contract test = provisioning readiness gate (OK-79)
 architecture/     Repo-local ADRs
 scripts/          Deterministic check implementations used by the Makefile
 ```
+
+**Helm verification caveat:** `make verify-charts` is a structural stand-in
+(YAML validity, required `Chart.yaml` fields, dependency resolution) — no
+`helm` binary was installable in the environment this profile content was
+authored in. It is **not** equivalent to `helm lint`/`helm template`. Run
+those for real before merging or relying on this profile content.
 
 ## Related work
 

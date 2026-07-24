@@ -1,0 +1,22 @@
+apiVersion: v2
+name: ok-observability-opensearch
+description: >
+  Reference implementation of the Logs guarantee (ADR-Platform-018 #3) —
+  OpenSearch (single-node-capable) plus a Fluent Bit log collector shipping
+  container logs per the cluster's declared logging policy (default:
+  all container logs; exclusions and retention are Provider Values).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - observability
+  - logs
+  - opensearch
+home: https://github.com/openkubes/ok-observability
+dependencies:
+  - name: opensearch
+    version: "2.30.1"
+    repository: "https://opensearch-project.github.io/helm-charts"
+  - name: fluent-bit
+    version: "0.48.6"
+    repository: "https://fluent.github.io/helm-charts"

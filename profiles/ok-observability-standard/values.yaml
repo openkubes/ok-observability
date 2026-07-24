@@ -1,0 +1,28 @@
+# Single Provider Values entry point for the composed profile.
+# ok-cluster's install-observability target (OK-79) is the intended caller;
+# it is expected to layer a real, cluster-specific Provider Values file on
+# top of this one (which only carries the same dev-sized defaults as each
+# implementations/* chart — see those README.md files for the full list).
+#
+# Subchart keys below match the `name:` of each dependency in Chart.yaml.
+
+ok-observability-prometheus:
+  kube-prometheus-stack:
+    prometheus:
+      prometheusSpec:
+        retention: 15d # Provider Value
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: "" # Provider Value
+
+ok-observability-grafana:
+  grafana:
+    persistence:
+      storageClassName: "" # Provider Value
+    adminPassword: "" # Provider Value — required, must be set at install time
+
+ok-observability-opensearch:
+  opensearch:
+    persistence:
+      storageClass: "" # Provider Value

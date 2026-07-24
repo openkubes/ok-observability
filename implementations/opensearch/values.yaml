@@ -1,0 +1,53 @@
+# Reference values for the Logs contract guarantee (ADR-Platform-018 #3).
+#
+# v1 default logging policy: all container logs; exclusions and retention
+# are Provider Values (contract v1, "Logs" guarantee).
+
+opensearch:
+  fullnameOverride: ok-observability-opensearch
+
+  # Single-node-capable for v1; HA is an explicit follow-up (not required by
+  # the contract — guarantee #5 Autonomy only requires no cross-cluster
+  # dependency, not multi-node HA within a cluster).
+  replicas: 1
+  singleNode: true
+
+  persistence:
+    enabled: true
+    storageClass: "" # Provider Value — ok-storage contract
+    size: 20Gi
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+
+  # Index lifecycle / retention: no default ILM policy is shipped in v1.
+  # Applying one is a Provider Value follow-up (index_state_management via
+  # OpenSearch's ISM plugin, or an external curator CronJob) — tracked as a
+  # known gap, not a silent omission.
+
+fluent-bit:
+  fullnameOverride: ok-observability-log-collector
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+  config:
+    outputs: |
+      [OUTPUT]
+          Name            opensearch
+          Match           *
+          Host            ok-observability-opensearch
+          Port            9200
+          Index           ok-observability-logs
+          Suppress_Type_Name On
+    # Default logging policy (contract guarantee #3): all container logs.
+    # Exclusions are a Provider Value — add a [FILTER] grep/exclude block
+    # here per cluster (e.g. to drop noisy system namespaces).

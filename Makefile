@@ -6,12 +6,12 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help verify verify-structure verify-links verify-secrets conformance evidence
+.PHONY: help verify verify-structure verify-links verify-secrets verify-charts conformance evidence
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-verify: verify-structure verify-links verify-secrets ## Run all fast deterministic repository checks
+verify: verify-structure verify-links verify-secrets verify-charts ## Run all fast deterministic repository checks
 	@echo ""
 	@echo "VERIFY: all checks passed."
 
@@ -23,6 +23,9 @@ verify-links: ## Relative markdown links resolve
 
 verify-secrets: ## No obvious secrets/credentials committed
 	@python3 scripts/check_secrets.py
+
+verify-charts: ## Structural chart check (NOT a substitute for helm lint/template — see scripts/check_charts.py)
+	@python3 scripts/check_charts.py
 
 conformance: ## Execute the ADR-018 Contract Test Gate (readiness gate)
 	@if [ -x tests/contract-test.sh ]; then \

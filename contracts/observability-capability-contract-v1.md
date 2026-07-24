@@ -30,3 +30,23 @@ following guarantees have been verified:
 ## Verification
 
 See tests/ — the contract test is the provisioning readiness gate.
+
+## Provider Values (v1.1 addendum, 2026-07-24)
+
+Formalizing what was previously only implied in the README chain diagram —
+no change to the five guarantees above, no re-review required:
+
+- **storageClass** — via the ok-storage contract; applies to Prometheus,
+  Alertmanager, Grafana, and OpenSearch persistent volumes
+- **retention** — metrics (Prometheus) and logs (OpenSearch/ILM) retention
+  windows
+- **resources** — requests/limits for all stack components
+- **alert receiver** — the Alertmanager receiver endpoint alerts are
+  delivered to (guarantee #4)
+- **ingress/access** — whether/how Grafana and other UIs are exposed;
+  external exposure requires a separate ADR-010 decision, not implied by
+  setting this value
+
+Provider Values are supplied per cluster and never committed to this repo
+(see `AGENTS.md`). This addendum surfaced while authoring the
+`ok-observability-standard` profile content for OK-79.

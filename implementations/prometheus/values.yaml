@@ -1,0 +1,68 @@
+# Reference values for the Metrics + Alerting contract guarantees
+# (ADR-Platform-018 #1, #4). Defaults here are for local/dev evaluation.
+#
+# Provider Values (per-cluster; do NOT edit in place — override at install
+# time with `-f <provider-values.yaml>`, see contracts/observability-capability-contract-v1.md
+# and profiles/ok-observability-standard/):
+#   - storageClassName (Prometheus + Alertmanager)
+#   - retention
+#   - resources
+#   - alert receiver (see alerting/alertmanager-values.yaml — layered separately)
+
+kube-prometheus-stack:
+  fullnameOverride: ok-observability
+
+  # Guarantee #2 (Dashboards) is served by implementations/grafana as its own
+  # release, wired to this Prometheus via its Service. Keep disabled here to
+  # avoid a second, unconfigured Grafana instance.
+  grafana:
+    enabled: false
+
+  prometheus:
+    prometheusSpec:
+      retention: 15d # Provider Value
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "" # Provider Value — ok-storage contract
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+      # Discover ServiceMonitors/PodMonitors/PrometheusRules cluster-wide,
+      # not just ones carrying this release's Helm label — required for
+      # guarantee #1 ("workloads can declaratively register") and to pick
+      # up alerting/prometheus-rules.yaml regardless of its release label.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "" # Provider Value
+            resources:
+              requests:
+                storage: 2Gi
+    # Routing/receivers intentionally NOT set here — see
+    # alerting/alertmanager-values.yaml, layered in at install time so that
+    # alert-receiver Provider Values stay physically separate from metrics
+    # values (matches the alerting/ vs implementations/prometheus/ split in
+    # the repo layout).
+
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true

@@ -1,0 +1,50 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ok-observability-platform-rules
+  labels:
+    # Picked up regardless of this label's value: implementations/prometheus
+    # sets ruleSelectorNilUsesHelmValues: false (cluster-wide rule discovery).
+    release: ok-observability
+spec:
+  groups:
+    - name: ok-observability.platform.rules
+      rules:
+        - alert: NodeExporterTargetDown
+          expr: up{job="node-exporter"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "node-exporter target down ({{ $labels.instance }})"
+            description: >
+              node-exporter has not been scraped successfully on
+              {{ $labels.instance }} for 5 minutes.
+
+        - alert: KubePodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total[10m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} crash-looping"
+            description: >
+              Container {{ $labels.container }} in pod
+              {{ $labels.namespace }}/{{ $labels.pod }} restarted more than
+              3 times in the last 10 minutes.
+
+        - alert: OKObservabilitySyntheticAlert
+          # Fired on demand by the contract test (tests/contract-test.sh,
+          # OK-79) to verify end-to-end alert delivery to the configured
+          # receiver. Not expected to fire outside of test runs.
+          expr: ok_observability_synthetic_alert_trigger == 1
+          for: 0m
+          labels:
+            severity: none
+          annotations:
+            summary: "Synthetic alert — contract test readiness gate"
+            description: >
+              Fired by the ADR-018 readiness gate to verify delivery at the
+              configured Alertmanager receiver. If you see this outside of
+              a test run, something is emitting the synthetic metric
+              unexpectedly.

@@ -18,12 +18,13 @@ require README.md
 require AGENTS.md
 require contracts/observability-capability-contract-v1.md
 require profiles/ok-observability-standard/README.md
+require profiles/ok-observability-standard/Chart.yaml
 require tests/README.md
-require implementations/prometheus
-require implementations/grafana
-require implementations/opensearch
-require dashboards
-require alerting
+require implementations/prometheus/Chart.yaml
+require implementations/grafana/Chart.yaml
+require implementations/opensearch/Chart.yaml
+require dashboards/README.md
+require alerting/README.md
 require architecture/decisions
 
 if [ "$fail" -ne 0 ]; then

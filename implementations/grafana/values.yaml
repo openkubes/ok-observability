@@ -1,0 +1,49 @@
+# Reference values for the Dashboards contract guarantee (ADR-Platform-018 #2).
+#
+# NOTE on the Prometheus datasource URL: with `fullnameOverride: ok-observability`
+# set in implementations/prometheus/values.yaml, the chart's Prometheus Service
+# name resolves to `ok-observability-prometheus`. This has not been verified
+# against a live `helm template` render in this environment (no helm binary
+# available here — see README "Verification status"); confirm the exact
+# Service name once rendered/installed and correct below if it differs.
+
+grafana:
+  fullnameOverride: ok-observability-grafana
+
+  persistence:
+    enabled: true
+    storageClassName: "" # Provider Value — ok-storage contract
+    size: 5Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  # Guarantee #2: pre-provisioned datasource pointing at the Prometheus
+  # deployed by implementations/prometheus. See NOTE above re: Service name.
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://ok-observability-prometheus:9090
+          access: proxy
+          isDefault: true
+
+  # ConfigMap sidecar discovers dashboards/ ConfigMaps labeled
+  # grafana_dashboard: "1", cluster-wide (searchNamespace: ALL) so dashboards/
+  # need not live in the same namespace as this release.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+  adminPassword: "" # Provider Value — must be set at install time; never commit a real value
+  ingress:
+    enabled: false # Provider Value — external exposure requires an ADR-010 ingress decision
