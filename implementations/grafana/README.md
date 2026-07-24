@@ -27,16 +27,12 @@ subchart wired implicitly through kube-prometheus-stack's values.
 
 ## Verification status
 
-`helm lint` / `helm template` could not be executed in the environment this
-chart was authored in — no `helm` binary was installable (network egress to
-`get.helm.sh` and `api.github.com` was blocked; only a curated allowlist,
-e.g. pypi, was reachable). `make verify` runs a structural equivalent
-(`scripts/check_charts.py`: valid YAML, required `Chart.yaml` fields,
-dependency entries resolvable) as a stand-in — **not** a substitute for a
-real `helm template` render. Run `helm dependency update && helm lint && helm
-template` here before merging, and correct the Prometheus datasource URL
-above if the rendered Service name differs from the assumption noted in
-`values.yaml`.
+`helm lint` and `helm template` were run against `profiles/ok-observability-standard`
+(which depends on this chart) on 2026-07-24 — clean lint (only an informational
+"icon is recommended" notice), template renders without error, and the
+Prometheus datasource URL assumption was confirmed against the rendered
+Service name (`ok-observability-prometheus`). Not yet verified: an actual
+`helm install` on a live cluster (next step, see `profiles/ok-observability-standard/README.md`).
 
 ## Usage
 

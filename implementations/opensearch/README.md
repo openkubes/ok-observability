@@ -28,10 +28,10 @@ follow-up — flagged in `values.yaml` rather than silently omitted.
 
 ## Verification status
 
-Same caveat as `implementations/grafana`: `helm lint`/`helm template` could
-not be run in the authoring environment (no `helm` binary installable — see
-`AGENTS.md` / `scripts/check_charts.py` for the structural stand-in used
-instead). Run the real Helm commands before merging.
+`helm lint`/`helm template` run clean against `profiles/ok-observability-standard`
+on 2026-07-24 (see `implementations/grafana/README.md` for details — same
+verification pass covered all four charts). Not yet verified: an actual
+`helm install` on a live cluster.
 
 ## Usage
 

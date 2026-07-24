@@ -1,11 +1,8 @@
 # Reference values for the Dashboards contract guarantee (ADR-Platform-018 #2).
 #
-# NOTE on the Prometheus datasource URL: with `fullnameOverride: ok-observability`
-# set in implementations/prometheus/values.yaml, the chart's Prometheus Service
-# name resolves to `ok-observability-prometheus`. This has not been verified
-# against a live `helm template` render in this environment (no helm binary
-# available here — see README "Verification status"); confirm the exact
-# Service name once rendered/installed and correct below if it differs.
+# Prometheus datasource URL: verified via `helm template` against
+# profiles/ok-observability-standard on 2026-07-24 — the Prometheus Service
+# resolves to `ok-observability-prometheus`, confirming the assumption below.
 
 grafana:
   fullnameOverride: ok-observability-grafana

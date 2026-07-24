@@ -36,9 +36,8 @@ OPENSEARCH_URL="${OPENSEARCH_URL:-}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-}"
 
 # Service names as set by implementations/*/values.yaml fullnameOverride.
-# NOT independently verified against a live helm template render — see
-# implementations/*/README.md "Verification status". Correct here if they
-# differ once verified.
+# Confirmed via `helm template` against profiles/ok-observability-standard
+# on 2026-07-24 — see implementations/*/README.md "Verification status".
 PROMETHEUS_SVC="${PROMETHEUS_SVC:-ok-observability-prometheus}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
 GRAFANA_SVC="${GRAFANA_SVC:-ok-observability-grafana}"

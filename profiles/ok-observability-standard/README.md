@@ -40,9 +40,15 @@ kubectl apply -f dashboards/
 
 ## Verification status
 
-`helm dependency update`/`lint`/`template` have **not** been run against this
-chart tree — no `helm` binary was installable in the environment these
-charts were authored in (see `implementations/*/README.md` "Verification
-status" for details). `make verify` runs a structural stand-in
-(`scripts/check_charts.py`). Run the real Helm commands locally before
-relying on this for OK-79.
+`helm dependency update`, `helm lint`, and `helm template` were run against
+this chart tree on 2026-07-24: all 4 charts lint clean (only an
+informational "icon is recommended" notice), template renders without
+error, and all four assumed Service names (`ok-observability-prometheus`,
+`ok-observability-grafana`, `ok-observability-opensearch`,
+`ok-observability-alertmanager`) were confirmed against the rendered
+output. `make verify` additionally runs a structural stand-in
+(`scripts/check_charts.py`) for environments without a `helm` binary.
+
+Not yet verified: an actual `helm install` on a live cluster, and the
+contract test (`tests/contract-test.sh`) running end-to-end against it —
+that's the next step.
