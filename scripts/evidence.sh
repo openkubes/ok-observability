@@ -14,9 +14,18 @@ dirty=""
 
 run() { # run <label> <command...>
   local label="$1"; shift
+  # Heartbeat on stderr so the run doesn't LOOK frozen: this script captures
+  # each step's stdout/stderr into a variable (for the evidence table), so
+  # nothing prints during the (often multi-minute) conformance run. stderr
+  # here is progress only — it never enters the captured output or the
+  # evidence file, so determinism is unaffected.
+  printf '→ running %s …\n' "$label" >&2
+  local start=$SECONDS
   if out=$("$@" 2>&1); then
+    printf '  ✓ %s passed (%ds)\n' "$label" "$((SECONDS - start))" >&2
     results+=("| \`$label\` | PASS |")
   else
+    printf '  ✗ %s FAILED (%ds)\n' "$label" "$((SECONDS - start))" >&2
     results+=("| \`$label\` | **FAIL** |")
     fail_output+="### $label output\n\`\`\`\n${out}\n\`\`\`\n"
     overall=1
