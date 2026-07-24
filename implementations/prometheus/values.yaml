@@ -126,6 +126,45 @@ kube-prometheus-stack:
             - name: prometheus-ok-observability-prometheus-db
               mountPath: /prometheus
 
+        # Third opinion, testing a specific hypothesis: the write test
+        # above succeeded WITHOUT readOnlyRootFilesystem set and WITHOUT
+        # subPath, but the real "prometheus" container has BOTH
+        # readOnlyRootFilesystem: true AND mounts via subPath: prometheus-db
+        # (confirmed via `kubectl get pod ... -o json | jq .spec.containers[]
+        # | select(.name=="prometheus") | {securityContext, volumeMounts}`).
+        # There are documented cases where a subPath-mounted volume
+        # unexpectedly inherits read-only behavior from
+        # readOnlyRootFilesystem depending on the container runtime's mount
+        # propagation handling. This container replicates the mount EXACTLY
+        # (same securityContext, same subPath) to test that specific
+        # combination in isolation before committing to a fix.
+        - name: verify-write-with-readonly-rootfs
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Verifying write access to /prometheus (subPath: prometheus-db) as $(id), with readOnlyRootFilesystem: true:"
+              if touch /prometheus/.write-test-ro 2>&1; then
+                echo "WRITE OK (readOnlyRootFilesystem + subPath does not explain the failure)"
+                rm -f /prometheus/.write-test-ro
+              else
+                echo "WRITE FAILED — readOnlyRootFilesystem + subPath interaction confirmed"
+                exit 1
+              fi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 2000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: prometheus-ok-observability-prometheus-db
+              mountPath: /prometheus
+              subPath: prometheus-db
+
   alertmanager:
     alertmanagerSpec:
       resources:
