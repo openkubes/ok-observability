@@ -46,6 +46,19 @@ any check runs against it. This is exactly the "behavior on partial
 failure" OK-79 asks to have proven — recorded here rather than only in a
 commit message.
 
+## Known issue, fixed (2): cleanup leaked resources on CRD-less clusters
+
+The trap-based cleanup issued one `kubectl delete deploy,svc,job,pod,configmap,servicemonitor ...`
+call. If any single kind in that comma-joined list isn't registered on the
+cluster (exactly the `servicemonitor` case above, no CRD), kubectl aborts
+the **entire** multi-kind delete before deleting anything —
+`--ignore-not-found` only suppresses "not found" for a missing *named*
+object, not a missing *resource type*. Result: the synthetic Pushgateway
+Deployment/Service/Pod from the very first (pre-fix) run against
+`ok-shared` was left running for the lifetime of the cluster, found via
+`kubectl get pods -A`. Fixed by issuing one delete call per kind, so a
+missing type only affects that one call.
+
 ## Known limitation: alert delivery vs. alert firing
 
 Step 6 always verifies the synthetic alert reaches Alertmanager

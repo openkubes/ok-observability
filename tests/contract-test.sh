@@ -87,9 +87,18 @@ cleanup() {
   for pid in "${PF_PIDS[@]:-}"; do
     kill "$pid" >/dev/null 2>&1 || true
   done
-  kubectl -n "$NAMESPACE" delete deploy,svc,job,pod,configmap,servicemonitor \
-    -l "app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_ID}" \
-    --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  # One delete call PER KIND, not a single comma-joined command: if any one
+  # kind isn't registered on this cluster (e.g. `servicemonitor` when the
+  # CRD is missing), kubectl aborts the WHOLE multi-kind delete before
+  # touching the others — silently leaking the Deployment/Service/Pod that
+  # otherwise would have been deleted just fine. `--ignore-not-found` only
+  # covers a missing *named* object, not a missing *resource type*. Found
+  # by exactly this leak on ok-shared (no ServiceMonitor CRD there).
+  for kind in deploy svc job pod configmap servicemonitor; do
+    kubectl -n "$NAMESPACE" delete "$kind" \
+      -l "app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_ID}" \
+      --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  done
   exit "$code"
 }
 trap cleanup EXIT INT TERM
