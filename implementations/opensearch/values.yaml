@@ -64,6 +64,18 @@ fluent-bit:
           Port            9200
           Index           ok-observability-logs
           Suppress_Type_Name On
+          # OpenSearch's Security Plugin is enabled by default (see
+          # implementations/opensearch's REQUIRED admin-password Provider
+          # Value above) — it serves HTTPS with a self-signed demo
+          # certificate and requires Basic Auth, even for the Bulk API
+          # fluent-bit uses. Found running against a live cluster: without
+          # `tls`/`tls.verify`/HTTP_User/HTTP_Passwd, fluent-bit fails with
+          # "broken connection ... HTTP status=0" (a plaintext HTTP
+          # request hitting a TLS port, not a DNS or routing problem).
+          tls             On
+          tls.verify      Off
+          HTTP_User       admin
+          HTTP_Passwd     "" # REQUIRED Provider Value — MUST match opensearch.extraEnvs[].OPENSEARCH_INITIAL_ADMIN_PASSWORD above
     # Default logging policy (contract guarantee #3): all container logs.
     # Exclusions are a Provider Value — add a [FILTER] grep/exclude block
     # here per cluster (e.g. to drop noisy system namespaces).
