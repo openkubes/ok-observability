@@ -1,0 +1,22 @@
+apiVersion: v2
+name: ok-observability-standard
+description: >
+  Composed Implementation Profile of the Observability Capability Contract v1
+  (ADR-Platform-018) — kube-prometheus-stack (metrics + alerting),
+  standalone Grafana (dashboards), and OpenSearch + Fluent Bit (logs).
+  Single installable entry point, intended to be consumed by ok-cluster's
+  `install-observability` target (OK-79) — ok-cluster installs, does not own.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/openkubes/ok-observability
+dependencies:
+  - name: ok-observability-prometheus
+    version: "0.1.0"
+    repository: "file://../../implementations/prometheus"
+  - name: ok-observability-grafana
+    version: "0.1.0"
+    repository: "file://../../implementations/grafana"
+  - name: ok-observability-opensearch
+    version: "0.1.0"
+    repository: "file://../../implementations/opensearch"

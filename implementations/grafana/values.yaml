@@ -1,0 +1,53 @@
+# Reference values for the Dashboards contract guarantee (ADR-Platform-018 #2).
+#
+# Prometheus datasource URL: verified via `helm template` against
+# profiles/ok-observability-standard on 2026-07-24 — the Prometheus Service
+# resolves to `ok-observability-prometheus`, confirming the assumption below.
+
+grafana:
+  fullnameOverride: ok-observability-grafana
+
+  persistence:
+    enabled: true
+    storageClassName: "" # Provider Value — ok-storage contract
+    size: 5Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  # Guarantee #2: pre-provisioned datasource pointing at the Prometheus
+  # deployed by implementations/prometheus. See NOTE above re: Service name.
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://ok-observability-prometheus:9090
+          access: proxy
+          isDefault: true
+
+  # ConfigMap sidecar discovers dashboards/ ConfigMaps labeled
+  # grafana_dashboard: "1", cluster-wide (searchNamespace: ALL) so dashboards/
+  # need not live in the same namespace as this release.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+  # Admin credentials come from the Kubernetes Secret `ok-observability-credentials`
+  # (created by ok-cluster `make install-observability`, later Vault-synced via
+  # External Secrets — the chart never sees a plaintext password). Keys:
+  # grafana-admin-user / grafana-admin-password.
+  admin:
+    existingSecret: ok-observability-credentials
+    userKey: grafana-admin-user
+    passwordKey: grafana-admin-password
+  ingress:
+    enabled: false # Provider Value — external exposure requires an ADR-010 ingress decision

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: ok-observability-grafana
+description: >
+  Reference implementation of the Dashboards guarantee (ADR-Platform-018 #2)
+  — a standalone Grafana instance wired to the in-cluster Prometheus
+  (implementations/prometheus) via pre-provisioned datasource, and to
+  dashboards/ via the ConfigMap sidecar. Kept independent of
+  kube-prometheus-stack's bundled Grafana (disabled there) so the Dashboards
+  guarantee can be reasoned about, tested, and reused (e.g. central Grafana
+  precedent in ok-shared) on its own terms.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - observability
+  - grafana
+  - dashboards
+home: https://github.com/openkubes/ok-observability
+dependencies:
+  - name: grafana
+    version: "8.6.4"
+    repository: "https://grafana.github.io/helm-charts"

@@ -1,0 +1,21 @@
+apiVersion: v2
+name: ok-observability-prometheus
+description: >
+  Reference implementation of the Metrics and Alerting guarantees
+  (ADR-Platform-018 #1, #4) via kube-prometheus-stack. Grafana is
+  intentionally disabled here — Dashboards (guarantee #2) is a separate
+  contract guarantee served by implementations/grafana, wired to this
+  Prometheus via datasource provisioning, not by the chart's bundled
+  Grafana subchart.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - observability
+  - prometheus
+  - alerting
+home: https://github.com/openkubes/ok-observability
+dependencies:
+  - name: kube-prometheus-stack
+    version: "62.7.0"
+    repository: "https://prometheus-community.github.io/helm-charts"

@@ -1,0 +1,153 @@
+# Reference values for the Metrics + Alerting contract guarantees
+# (ADR-Platform-018 #1, #4). Defaults here are for local/dev evaluation.
+#
+# Provider Values (per-cluster; do NOT edit in place — override at install
+# time with `-f <provider-values.yaml>`, see contracts/observability-capability-contract-v1.md
+# and profiles/ok-observability-standard/):
+#   - storageClassName (Prometheus + Alertmanager)
+#   - retention
+#   - resources
+#   - alert receiver (see alerting/alertmanager-values.yaml — layered separately)
+
+kube-prometheus-stack:
+  fullnameOverride: ok-observability
+
+  # Guarantee #2 (Dashboards) is served by implementations/grafana as its own
+  # release, wired to this Prometheus via its Service. Keep disabled here to
+  # avoid a second, unconfigured Grafana instance.
+  grafana:
+    enabled: false
+
+  prometheus:
+    prometheusSpec:
+      retention: 15d # Provider Value
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            # storageClassName intentionally OMITTED (not ""): kube-prometheus-stack
+            # passes this field through verbatim into the PVC, and an explicit
+            # empty string DISABLES default-StorageClass resolution — the PVC is
+            # then treated as Immediate-binding and stays Pending forever
+            # ("pod has unbound immediate PersistentVolumeClaims"). Omitting the
+            # key lets the PVC fall back to the cluster default StorageClass.
+            # Providers override with a real class via -f <provider-values>
+            # (ok-storage contract).
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+      # Discover ServiceMonitors/PodMonitors/PrometheusRules cluster-wide,
+      # not just ones carrying this release's Helm label — required for
+      # guarantee #1 ("workloads can declaratively register") and to pick
+      # up alerting/prometheus-rules.yaml regardless of its release label.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+
+      # Fix for a real failure found running against ok-shared: Prometheus
+      # panicked with "open /prometheus/queries.active: permission denied"
+      # on a genuinely fresh PVC.
+      #
+      # CONFIRMED ROOT CAUSE (2026-07-24 — reproduced with a uid=1000/gid=2000
+      # busybox pod mounting the SAME PVC with subPath=prometheus-db: through
+      # the subPath the data dir came up root:root 0755 and the write failed,
+      # while the PVC ROOT was correctly 1000:2000). This is the classic
+      # fsGroup + subPath interaction:
+      #   - The operator-generated "prometheus" container mounts the data
+      #     volume at /prometheus WITH `subPath: prometheus-db` and runs as
+      #     1000:2000 (--storage.tsdb.path=/prometheus).
+      #   - The kubelet does NOT apply fsGroup ownership to subPath targets,
+      #     so that directory stays root:root 0755 → uid 1000 cannot create
+      #     /prometheus/queries.active → panic.
+      #
+      # Why the previous initContainer did NOT fix it: it mounted the volume
+      # WITHOUT subPath and chowned the PVC root (plus a root-level
+      # prometheus-db/ dir it created itself). That is a DIFFERENT directory
+      # than the one the kubelet bind-mounts for the main container's subPath
+      # — verified live.
+      #
+      # THE FIX: mount the volume in THIS initContainer with the SAME
+      # `subPath: prometheus-db`, so /prometheus here is the exact directory
+      # the main container will use, then chown it to 1000:2000. The
+      # initContainer's subPath setup creates the dir first; the main
+      # container then reuses it with the corrected ownership.
+      #
+      # The readOnlyRootFilesystem:false override on the prometheus container
+      # (below) was previously suspected and DISPROVEN as the cause; kept
+      # because it is harmless.
+      #
+      # Volume name / subPath derived from a live `kubectl get pod -o json`
+      # against kube-prometheus-stack as pinned in Chart.yaml. Re-verify after
+      # any chart version bump — see implementations/prometheus/README.md.
+      initContainers:
+        - name: fix-local-path-fsgroup
+          image: busybox:1.36
+          # Self-diagnosing: prints ownership before/after so a stuck
+          # permission-denied issue is visible in `kubectl logs -c
+          # fix-local-path-fsgroup` without needing to exec into a
+          # crash-looping main container (which usually isn't possible —
+          # it isn't in a Running state long enough to attach to).
+          command:
+            - sh
+            - -c
+            - |
+              echo "BEFORE (id + data dir as seen through subPath prometheus-db):"
+              id
+              ls -ld /prometheus
+              ls -la /prometheus | head -20
+              chown -R 1000:2000 /prometheus
+              chmod -R u+rwX,g+rwX /prometheus
+              echo "AFTER:"
+              ls -ld /prometheus
+              ls -la /prometheus | head -20
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            # SAME subPath as the operator-generated prometheus container —
+            # this is the whole point of the fix (see comment above).
+            - name: prometheus-ok-observability-prometheus-db
+              mountPath: /prometheus
+              subPath: prometheus-db
+
+      # Part (b) of the fix above: the operator generates a "prometheus"
+      # container with readOnlyRootFilesystem: true; this patches just that
+      # one field by container name, per Prometheus Operator's documented
+      # mechanism for overriding generated containers.
+      containers:
+        - name: prometheus
+          securityContext:
+            readOnlyRootFilesystem: false
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      storage:
+        volumeClaimTemplate:
+          spec:
+            # storageClassName intentionally OMITTED (not "") — see the
+            # Prometheus storageSpec above for why an empty string breaks
+            # default-StorageClass resolution. Providers override via -f.
+            resources:
+              requests:
+                storage: 2Gi
+    # Routing/receivers intentionally NOT set here — see
+    # alerting/alertmanager-values.yaml, layered in at install time so that
+    # alert-receiver Provider Values stay physically separate from metrics
+    # values (matches the alerting/ vs implementations/prometheus/ split in
+    # the repo layout).
+
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true

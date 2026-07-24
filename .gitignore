@@ -1,3 +1,6 @@
 .venv/
 *.tgz
 charts/*.lock
+Chart.lock
+/evidence-*.md
+*.provider-values.yaml
