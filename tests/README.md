@@ -16,15 +16,35 @@ A cluster is not considered fully provisioned until this test passes.
 
 ## Status
 
-Implemented, **not yet run against a live cluster**. Authored in a
-sandboxed environment with no cluster access (`kubectl` unavailable, no
-KUBECONFIG) — see `AGENTS.md` / `implementations/*/README.md` for the same
-caveat that applies to the Helm charts this test exercises. Practical
-viability (timing, flakiness of the synthetic-alert path, behavior on
-partial failure — explicitly called out in OK-79) has **not** been
-validated end-to-end; that validation is the next real step once run
-against ok-shared, ok1-talos, or another live cluster with the
-`ok-observability-standard` profile installed.
+Implemented and run against two real clusters (`ok-infra`, `ok-shared`) —
+**neither had the profile installed**, which is exactly what surfaced the
+false-positive bug documented below and led to the current, hardened
+version. Still not validated end-to-end against a cluster where
+`ok-observability-standard` actually IS installed — that remains the next
+real step, and is expected to reveal further practical-viability issues
+(timing, flakiness of the synthetic-alert path) per OK-79.
+
+## Known issue, fixed (found running against real clusters)
+
+The first version of this script produced **false PASS results** when the
+target services didn't exist at all. Root cause, confirmed empirically:
+`curl -sf ... | jq -e '<filter>'` returns exit **0** when curl fails and jq
+receives *empty* input — `jq -e` treats "no document at all" as success, not
+as an error. Combined with `pipefail` not propagating into a nested
+`bash -c "..."` subshell, a silently-failed `kubectl port-forward` (because
+the Service didn't exist) produced an instant, contentless "ok" instead of
+a timeout or a clear error.
+
+Found by running `make conformance` against `ok-infra` and `ok-shared`,
+neither of which had the profile installed — every async check reported
+"ok" within seconds despite there being nothing to verify. Fixed by:
+adding `set -o pipefail;` inside every `curl | jq` subshell, adding an
+explicit Service-existence precondition per component (fails fast with a
+named diagnostic instead of a 120s timeout), and verifying each
+port-forward is actually serving traffic (health-endpoint probe) before
+any check runs against it. This is exactly the "behavior on partial
+failure" OK-79 asks to have proven — recorded here rather than only in a
+commit message.
 
 ## Known limitation: alert delivery vs. alert firing
 
