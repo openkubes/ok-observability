@@ -65,7 +65,24 @@ kube-prometheus-stack:
       initContainers:
         - name: fix-local-path-fsgroup
           image: busybox:1.36
-          command: ["sh", "-c", "chown -R 1000:2000 /prometheus"]
+          # Self-diagnosing: prints ownership before/after so a stuck
+          # permission-denied issue is visible in `kubectl logs -c
+          # fix-local-path-fsgroup` without needing to exec into a
+          # crash-looping main container (which usually isn't possible —
+          # it isn't in a Running state long enough to attach to).
+          command:
+            - sh
+            - -c
+            - |
+              echo "BEFORE (id, and /prometheus ownership):"
+              id
+              ls -ld /prometheus
+              ls -la /prometheus | head -20
+              chown -R 1000:2000 /prometheus
+              chmod -R u+rwX,g+rwX /prometheus
+              echo "AFTER:"
+              ls -ld /prometheus
+              ls -la /prometheus | head -20
           securityContext:
             runAsUser: 0
             runAsNonRoot: false
