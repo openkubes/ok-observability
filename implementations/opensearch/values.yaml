@@ -75,7 +75,16 @@ fluent-bit:
           tls             On
           tls.verify      Off
           HTTP_User       admin
-          HTTP_Passwd     "" # REQUIRED Provider Value — MUST match opensearch.extraEnvs[].OPENSEARCH_INITIAL_ADMIN_PASSWORD above
+          # HTTP_Passwd is a REQUIRED Provider Value — it MUST match
+          # opensearch.extraEnvs[].OPENSEARCH_INITIAL_ADMIN_PASSWORD above.
+          # WARNING: fluent-bit's classic config does NOT support inline
+          # (trailing) comments — anything after a value on the SAME line
+          # becomes PART of the value. A trailing "# ..." here previously
+          # turned the password into "<pw>   # ..." and caused a live 401
+          # loop against OpenSearch's Bulk API. Only full-line comments
+          # (# at the start of the line) are safe. Override at install time;
+          # the empty default below will not authenticate.
+          HTTP_Passwd     ""
     # Default logging policy (contract guarantee #3): all container logs.
     # Exclusions are a Provider Value — add a [FILTER] grep/exclude block
     # here per cluster (e.g. to drop noisy system namespaces).

@@ -66,6 +66,13 @@ two separate `--set` values that must be kept in sync manually for now;
 a shared Kubernetes Secret referenced by both would be more robust and is
 a reasonable follow-up, not attempted here.
 
+> **Footgun:** `fluent-bit.config.outputs` is fluent-bit's *classic* config
+> format, which does **not** support inline (trailing) comments. Anything
+> after a value on the same line — e.g. `HTTP_Passwd secret # my note` —
+> becomes part of the value, silently corrupting the password and producing
+> a `HTTP status=401` flush loop. Put notes on their own line with `#` at
+> the start; never after a value.
+
 ## Usage
 
 ```shell

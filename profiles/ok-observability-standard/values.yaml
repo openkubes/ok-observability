@@ -11,10 +11,11 @@ ok-observability-prometheus:
     prometheus:
       prometheusSpec:
         retention: 15d # Provider Value
-        storageSpec:
-          volumeClaimTemplate:
-            spec:
-              storageClassName: "" # Provider Value
+        # storageClassName intentionally NOT set here: an empty string ""
+        # breaks default-StorageClass resolution for kube-prometheus-stack
+        # PVCs (they become Immediate-binding and stay Pending). Leaving it
+        # unset lets the cluster default apply; providers override with a real
+        # class via their own -f <provider-values>.
 
 ok-observability-grafana:
   grafana:

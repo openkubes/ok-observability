@@ -30,7 +30,14 @@ kube-prometheus-stack:
       storageSpec:
         volumeClaimTemplate:
           spec:
-            storageClassName: "" # Provider Value — ok-storage contract
+            # storageClassName intentionally OMITTED (not ""): kube-prometheus-stack
+            # passes this field through verbatim into the PVC, and an explicit
+            # empty string DISABLES default-StorageClass resolution — the PVC is
+            # then treated as Immediate-binding and stays Pending forever
+            # ("pod has unbound immediate PersistentVolumeClaims"). Omitting the
+            # key lets the PVC fall back to the cluster default StorageClass.
+            # Providers override with a real class via -f <provider-values>
+            # (ok-storage contract).
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
@@ -44,46 +51,40 @@ kube-prometheus-stack:
       ruleSelectorNilUsesHelmValues: false
 
       # Fix for a real failure found running against ok-shared: Prometheus
-      # panicked with "open /prometheus/queries.active: permission denied".
-      # NOTE the failing path is directly under the mount ROOT (/prometheus),
-      # not under /prometheus/prometheus-db.
+      # panicked with "open /prometheus/queries.active: permission denied"
+      # on a genuinely fresh PVC.
       #
-      # Investigation history (see git history: 270d54a, a8d4494, 075d3dd,
-      # c09caff):
-      #   1. NOT "local-path-provisioner doesn't support fsGroup" — the PVC
-      #      root was already correctly owned 1000:2000 before any fix ran.
-      #   2. NOT plain subPath-directory-ownership either, in isolation —
-      #      a write test as the exact same UID/GID succeeded once ownership
-      #      was fixed... but only when NOT combined with
-      #      readOnlyRootFilesystem in an isolated throwaway-container test.
-      #   3. DISPROVEN ON RE-TEST: overriding the operator-generated
-      #      "prometheus" container's readOnlyRootFilesystem to false was
-      #      confirmed LIVE-ACTIVE on the real pod
-      #      (`kubectl get pod ... -o jsonpath='{.spec.containers[?(@.name=="prometheus")].securityContext}'`
-      #      showed `readOnlyRootFilesystem:false`), but the identical panic
-      #      persisted. So readOnlyRootFilesystem was not the (sole) cause —
-      #      the isolated throwaway-container reproduction in step 2/3 was
-      #      evidently not equivalent to the real failure.
-      #   4. Working theory, not yet confirmed live: the previous
-      #      initContainer only `chown -R`'d /prometheus/prometheus-db, never
-      #      the mount ROOT /prometheus itself — but queries.active is
-      #      created directly at /prometheus/queries.active. Even though the
-      #      PVC root's fsGroup ownership looked correct in step 1's
-      #      diagnostic, this was only ever spot-checked, not chowned/fixed
-      #      explicitly, and a stale root-owned queries.active from an early,
-      #      pre-fix crash attempt (this PVC was reused across every helm
-      #      upgrade since revision 1) cannot be ruled out. This revision
-      #      chowns /prometheus itself, recursively but non-destructively,
-      #      in addition to prometheus-db/, and keeps the
-      #      readOnlyRootFilesystem override in place (harmless if unneeded).
-      #      Re-verify against a genuinely fresh PVC (helm uninstall + PVC
-      #      delete + reinstall, not upgrade) to rule out stale on-disk state
-      #      from earlier crash-loop attempts entirely.
+      # CONFIRMED ROOT CAUSE (2026-07-24 — reproduced with a uid=1000/gid=2000
+      # busybox pod mounting the SAME PVC with subPath=prometheus-db: through
+      # the subPath the data dir came up root:root 0755 and the write failed,
+      # while the PVC ROOT was correctly 1000:2000). This is the classic
+      # fsGroup + subPath interaction:
+      #   - The operator-generated "prometheus" container mounts the data
+      #     volume at /prometheus WITH `subPath: prometheus-db` and runs as
+      #     1000:2000 (--storage.tsdb.path=/prometheus).
+      #   - The kubelet does NOT apply fsGroup ownership to subPath targets,
+      #     so that directory stays root:root 0755 → uid 1000 cannot create
+      #     /prometheus/queries.active → panic.
       #
-      # UNVERIFIED volume name / subPath: derived from a live `kubectl get
-      # pod ... -o json` inspection on 2026-07-24 against kube-prometheus-stack
-      # as pinned in Chart.yaml. Re-verify after any chart version bump —
-      # see implementations/prometheus/README.md.
+      # Why the previous initContainer did NOT fix it: it mounted the volume
+      # WITHOUT subPath and chowned the PVC root (plus a root-level
+      # prometheus-db/ dir it created itself). That is a DIFFERENT directory
+      # than the one the kubelet bind-mounts for the main container's subPath
+      # — verified live.
+      #
+      # THE FIX: mount the volume in THIS initContainer with the SAME
+      # `subPath: prometheus-db`, so /prometheus here is the exact directory
+      # the main container will use, then chown it to 1000:2000. The
+      # initContainer's subPath setup creates the dir first; the main
+      # container then reuses it with the corrected ownership.
+      #
+      # The readOnlyRootFilesystem:false override on the prometheus container
+      # (below) was previously suspected and DISPROVEN as the cause; kept
+      # because it is harmless.
+      #
+      # Volume name / subPath derived from a live `kubectl get pod -o json`
+      # against kube-prometheus-stack as pinned in Chart.yaml. Re-verify after
+      # any chart version bump — see implementations/prometheus/README.md.
       initContainers:
         - name: fix-local-path-fsgroup
           image: busybox:1.36
@@ -96,28 +97,25 @@ kube-prometheus-stack:
             - sh
             - -c
             - |
-              echo "BEFORE (id, and /prometheus mount-root + prometheus-db ownership):"
+              echo "BEFORE (id + data dir as seen through subPath prometheus-db):"
               id
               ls -ld /prometheus
               ls -la /prometheus | head -20
-              mkdir -p /prometheus/prometheus-db
-              ls -la /prometheus/prometheus-db | head -20
-              chown 1000:2000 /prometheus
-              chmod u+rwX,g+rwX /prometheus
-              chown -R 1000:2000 /prometheus/prometheus-db
-              chmod -R u+rwX,g+rwX /prometheus/prometheus-db
+              chown -R 1000:2000 /prometheus
+              chmod -R u+rwX,g+rwX /prometheus
               echo "AFTER:"
               ls -ld /prometheus
               ls -la /prometheus | head -20
-              ls -ld /prometheus/prometheus-db
-              ls -la /prometheus/prometheus-db | head -20
           securityContext:
             runAsUser: 0
             runAsNonRoot: false
             allowPrivilegeEscalation: false
           volumeMounts:
+            # SAME subPath as the operator-generated prometheus container —
+            # this is the whole point of the fix (see comment above).
             - name: prometheus-ok-observability-prometheus-db
               mountPath: /prometheus
+              subPath: prometheus-db
 
       # Part (b) of the fix above: the operator generates a "prometheus"
       # container with readOnlyRootFilesystem: true; this patches just that
@@ -137,7 +135,9 @@ kube-prometheus-stack:
       storage:
         volumeClaimTemplate:
           spec:
-            storageClassName: "" # Provider Value
+            # storageClassName intentionally OMITTED (not "") — see the
+            # Prometheus storageSpec above for why an empty string breaks
+            # default-StorageClass resolution. Providers override via -f.
             resources:
               requests:
                 storage: 2Gi
