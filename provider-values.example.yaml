@@ -1,0 +1,29 @@
+# provider-values.example.yaml — COMMITTED TEMPLATE (no secrets).
+#
+# HOW TO USE
+#   cp provider-values.example.yaml <cluster>.provider-values.yaml
+#   # edit the copy, then keep it git-ignored (.gitignore ignores
+#   # *.provider-values.yaml). NEVER commit the filled-in copy.
+#
+# WHAT IT IS
+#   ok-cluster's `make install-observability CLUSTER=<cluster>
+#   OBSERVABILITY_VALUES=<path>` reads these passwords and creates the
+#   Kubernetes Secret `ok-observability-credentials` (keys:
+#   grafana-admin-user=admin, grafana-admin-password, opensearch-admin-password).
+#   This file is NOT passed to `helm -f`; the charts read the Secret by
+#   reference (Grafana admin.existingSecret, OpenSearch secretKeyRef,
+#   Fluent Bit ${OPENSEARCH_PASSWORD}).
+#
+# THROWAWAY / VERIFY CLUSTERS
+#   For a fresh disposable cluster (e.g. ok-obs-verify) any self-consistent
+#   values are fine — the same file seeds OpenSearch's INITIAL_ADMIN_PASSWORD
+#   and the Grafana/Fluent-Bit side, so they always match. No need to obtain
+#   anyone else's provider-values; just create your own.
+#
+# PHASE 2 (OK-110)
+#   For datacenter-envelope clusters a Vault sync (External Secrets) will
+#   produce the same Secret, and this file is no longer needed there. Edge/
+#   air-gapped clusters keep this offline-reconcilable file profile (OK-71).
+
+grafanaAdminPassword: "CHANGE_ME"
+opensearchAdminPassword: "CHANGE_ME"
