@@ -113,10 +113,16 @@ scripts/          Deterministic check implementations used by the Makefile
 ```
 
 **Helm verification caveat:** `make verify-charts` is a structural stand-in
-(YAML validity, required `Chart.yaml` fields, dependency resolution) — no
-`helm` binary was installable in the environment this profile content was
-authored in. It is **not** equivalent to `helm lint`/`helm template`. Run
-those for real before merging or relying on this profile content.
+(YAML validity, required `Chart.yaml` fields, dependency resolution). It is
+**not** equivalent to `helm lint`/`helm template` — run those for real before
+merging or relying on this profile content.
+
+Two things to know when you do. Run `make deps` first: this is a two-level
+umbrella (profile → `implementations/*` → upstream), `helm dependency build`
+resolves only one level, and building just the profile renders **empty** — the
+bug fixed in OK-109. And `helm lint` reports `templates/: directory not found`;
+that is expected, these are pure umbrella/values wrappers with no templates of
+their own.
 
 ## Related work
 

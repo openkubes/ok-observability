@@ -43,7 +43,7 @@ grafana:
 
   # Admin credentials come from the Kubernetes Secret `ok-observability-credentials`
   # (created by ok-cluster `make install-observability`, later Vault-synced via
-  # External Secrets — the chart never sees a plaintext password). Keys:
+  # the Vault Secrets Operator — the chart never sees a plaintext password). Keys:
   # grafana-admin-user / grafana-admin-password.
   admin:
     existingSecret: ok-observability-credentials

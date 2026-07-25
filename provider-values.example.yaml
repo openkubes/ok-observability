@@ -21,9 +21,10 @@
 #   anyone else's provider-values; just create your own.
 #
 # PHASE 2 (OK-110)
-#   For datacenter-envelope clusters a Vault sync (External Secrets) will
-#   produce the same Secret, and this file is no longer needed there. Edge/
-#   air-gapped clusters keep this offline-reconcilable file profile (OK-71).
+#   For datacenter-envelope clusters a Vault sync via the Vault Secrets Operator
+#   (a VaultStaticSecret — ADR-Platform-025) will produce the same Secret, and
+#   this file is no longer needed there. Edge/air-gapped clusters keep this
+#   offline-reconcilable file profile (Secret Contract, OK-71).
 
 grafanaAdminPassword: "CHANGE_ME"
 opensearchAdminPassword: "CHANGE_ME"
