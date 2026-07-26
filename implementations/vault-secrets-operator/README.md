@@ -57,17 +57,19 @@ the Vault-sourced Secret (see `tests/contract-test.sh`).
 | Field | ok-robotics value | note |
 |---|---|---|
 | namespace | `ok-observability` | the stack's namespace |
-| `VaultConnection.address` | `https://10.44.0.38:30443` | **interim** NodePort on an ok-shared node IP |
+| `VaultConnection.address` | `https://192.168.100.207:443` | stable host-LB IP (ok-shared-ingress, MetalLB on ok-infra) |
 | `VaultConnection.tlsServerName` | `vault.ok-shared.internal` | SNI for cert validation |
 | `VaultAuth.mount` | `kubernetes/ok-robotics` | per-cluster auth mount |
 | `VaultStaticSecret.path` | `ok-robotics/obs/observability-credentials` | KV path |
 
 ## Notes
 
-- **Interim reachability:** child clusters run no MetalLB, so the Traefik LB has no
-  external IP — we use the NodePort `30443` + SNI. The canonical fix is a host-level
-  LoadBalancer on ok-infra (`ok-mgmt-lb` pattern), after which `address` becomes
-  `https://vault.ok-shared.internal:443`. Tracked in OK-110.
+- **Reachability (OK-110 Path A):** child clusters run no MetalLB, so Vault is reached
+  via the stable host-level LoadBalancer for ok-shared ingress (`ok-shared-ingress`,
+  MetalLB on ok-infra) at `192.168.100.207:443` → Traefik NodePort 30443 →
+  IngressRouteTCP SNI passthrough → Vault. `tlsServerName` presents the SNI so the
+  cert validates against the pinned CA. Path B (native child-cluster LB via Multus
+  NAD, letting `vault.ok-shared.internal` resolve to a child-owned LB IP) is OK-57.
 - VSO adds a `_raw` key (full KV JSON) to the Secret — harmless; the charts read
   only the named keys.
 - `overwrite: true` lets VSO adopt a pre-existing file-based Secret of the same name.
