@@ -34,9 +34,10 @@ opensearch:
 
   # Admin password comes from the Kubernetes Secret `ok-observability-credentials`
   # (key: opensearch-admin-password), created by ok-cluster
-  # `make install-observability` (later Vault-synced via External Secrets — the
-  # chart never sees plaintext). OpenSearch 2.12+ refuses to start without this
-  # set; found running the empty default against a live cluster (OK-79).
+  # `make install-observability`, or Vault-synced via the Vault Secrets
+  # Operator — the chart never sees plaintext. OpenSearch 2.12+ refuses to
+  # start without this set; found running the empty default against a live
+  # cluster (OK-79).
   extraEnvs:
     - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
       valueFrom:
