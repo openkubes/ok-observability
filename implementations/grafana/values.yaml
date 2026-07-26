@@ -42,8 +42,8 @@ grafana:
       searchNamespace: ALL
 
   # Admin credentials come from the Kubernetes Secret `ok-observability-credentials`
-  # (created by ok-cluster `make install-observability`, later Vault-synced via
-  # the Vault Secrets Operator — the chart never sees a plaintext password). Keys:
+  # (written by ok-cluster `make install-observability`, or Vault-synced via the
+  # Vault Secrets Operator — the chart never sees a plaintext password). Keys:
   # grafana-admin-user / grafana-admin-password.
   admin:
     existingSecret: ok-observability-credentials
