@@ -10,7 +10,14 @@ ts=$(date -u +"%Y-%m-%d %H:%M UTC")
 commit=$(git rev-parse --short HEAD 2>/dev/null || echo "n/a")
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "n/a")
 dirty=""
-[ -n "$(git status --porcelain 2>/dev/null)" ] && dirty=" (working tree dirty)"
+# --untracked-files=no: "dirty" must mean TRACKED files were modified, which is
+# what makes the evidence unreproducible. Untracked files do not change the
+# behaviour of the recorded commit. Latent here rather than actively wrong —
+# everything transient in this repo is git-ignored (charts/, Chart.lock, *.tgz,
+# evidence-*.md, *.provider-values.yaml) and --porcelain does not list ignored
+# files — but the same pattern DID misfire in ok-cluster, where the render
+# directory `make new` creates is not ignored (OK-109 Part 1, ok-cluster #7).
+[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] && dirty=" (working tree dirty)"
 
 run() { # run <label> <command...>
   local label="$1"; shift
