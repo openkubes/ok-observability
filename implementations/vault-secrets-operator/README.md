@@ -66,7 +66,7 @@ Render it by substituting **only the named variables**:
 
 ```
 envsubst '$CLUSTER $OBS_NAMESPACE $SECRET_NAME $VAULT_ADDR $VAULT_TLS_SERVER_NAME
-          $VAULT_CA_SECRET $KV_MOUNT $KV_PATH $VSO_SERVICE_ACCOUNT $REFRESH_AFTER' \
+          $VAULT_CA_SECRET $KV_MOUNT $KV_PATH $VAULT_ROLE $VSO_SERVICE_ACCOUNT $REFRESH_AFTER' \
   < vault-secret-sync.template.yaml | kubectl apply -f -
 ```
 
@@ -89,6 +89,8 @@ criterion 6), not fresh-install ordering (criterion 7).
 | `VaultConnection.tlsServerName` | `vault.ok-shared.internal` | `VAULT_TLS_SERVER_NAME` |
 | `VaultAuth.mount` | `kubernetes/ok-robotics` | `kubernetes/${CLUSTER}` |
 | `VaultStaticSecret.path` | `ok-robotics/obs/observability-credentials` | `KV_PATH` |
+| `VaultAuth.kubernetes.role` | `sa-obs` | `VAULT_ROLE` — the Vault role, distinct from the SA below |
+| `VaultAuth.kubernetes.serviceAccount` | `sa-obs` | `VSO_SERVICE_ACCOUNT` — must be the SA bound in `VAULT_ROLE` |
 
 ## Notes
 
