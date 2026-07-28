@@ -52,15 +52,43 @@ kubectl -n ok-observability get vaultstaticsecret ok-observability-credentials
 Then re-run the OK-79 contract test gate to confirm the stack is still green with
 the Vault-sourced Secret (see `tests/contract-test.sh`).
 
+## Two files: a worked example and a template
+
+| File | Use |
+|---|---|
+| `vault-secret-sync.ok-robotics.yaml` | the worked example — concrete values, proven on ok-robotics 2026-07-26. Read this first. |
+| `vault-secret-sync.template.yaml` | the parameterised form ok-cluster renders and applies per cluster (OK-117). |
+
+ok-cluster **installs** the capability and does not own the asset (ADR-Platform-018 /
+ADR-Platform-024), which is why the template lives here rather than in ok-cluster.
+
+Render it by substituting **only the named variables**:
+
+```
+envsubst '$CLUSTER $OBS_NAMESPACE $SECRET_NAME $VAULT_ADDR $VAULT_TLS_SERVER_NAME
+          $VAULT_CA_SECRET $KV_MOUNT $KV_PATH $VSO_SERVICE_ACCOUNT $REFRESH_AFTER' \
+  < vault-secret-sync.template.yaml | kubectl apply -f -
+```
+
+Pass the explicit list. A bare `envsubst` substitutes every `${VAR}` in the input, so
+any unrelated placeholder in the file is silently replaced with an empty string —
+verified: with a bare invocation `${OPENSEARCH_PASSWORD}` becomes empty, with the list
+form it survives intact. The variables are documented in the template header.
+
+**Ordering is the point.** The `VaultStaticSecret` must reach `SYNCED` *before* the
+observability Helm release, because OpenSearch 2.12+ refuses to start without the admin
+password at first boot. Applying it afterwards demonstrates migration (ADR-025
+criterion 6), not fresh-install ordering (criterion 7).
+
 ## Per-cluster values to adjust
 
-| Field | ok-robotics value | note |
+| Field | ok-robotics value | template variable |
 |---|---|---|
-| namespace | `ok-observability` | the stack's namespace |
-| `VaultConnection.address` | `https://192.168.100.207:443` | stable host-LB IP (ok-shared-ingress, MetalLB on ok-infra) |
-| `VaultConnection.tlsServerName` | `vault.ok-shared.internal` | SNI for cert validation |
-| `VaultAuth.mount` | `kubernetes/ok-robotics` | per-cluster auth mount |
-| `VaultStaticSecret.path` | `ok-robotics/obs/observability-credentials` | KV path |
+| namespace | `ok-observability` | `OBS_NAMESPACE` |
+| `VaultConnection.address` | `https://192.168.100.207:443` | `VAULT_ADDR` — stable host-LB IP (ok-shared-ingress, MetalLB on ok-infra) |
+| `VaultConnection.tlsServerName` | `vault.ok-shared.internal` | `VAULT_TLS_SERVER_NAME` |
+| `VaultAuth.mount` | `kubernetes/ok-robotics` | `kubernetes/${CLUSTER}` |
+| `VaultStaticSecret.path` | `ok-robotics/obs/observability-credentials` | `KV_PATH` |
 
 ## Notes
 
