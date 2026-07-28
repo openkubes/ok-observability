@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help deps verify verify-structure verify-links verify-secrets verify-charts conformance evidence
+.PHONY: help deps verify verify-structure verify-links verify-secrets verify-charts verify-vso-template conformance evidence
 
 # The profile is a TWO-level umbrella: profiles/ok-observability-standard depends
 # on the three implementations/* wrapper charts, and each of those depends on an
@@ -31,7 +31,7 @@ deps: ## Build chart dependencies at BOTH umbrella levels (required before helm 
 	helm dependency build $(PROFILE) >/dev/null || helm dependency update --skip-refresh $(PROFILE) >/dev/null; \
 	echo "DEPS: all levels built."
 
-verify: verify-structure verify-links verify-secrets verify-charts ## Run all fast deterministic repository checks
+verify: verify-structure verify-links verify-secrets verify-charts verify-vso-template ## Run all fast deterministic repository checks
 	@echo ""
 	@echo "VERIFY: all checks passed."
 
@@ -46,6 +46,9 @@ verify-secrets: ## No obvious secrets/credentials committed
 
 verify-charts: ## Structural chart check (NOT a substitute for helm lint/template — see scripts/check_charts.py)
 	@python3 scripts/check_charts.py
+
+verify-vso-template: ## VSO template must stay equivalent to the proven ok-robotics example
+	@python3 scripts/check_vso_template.py
 
 conformance: ## Execute the ADR-018 Contract Test Gate (readiness gate)
 	@if [ -x tests/contract-test.sh ]; then \
