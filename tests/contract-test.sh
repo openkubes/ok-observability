@@ -26,6 +26,11 @@
 # a false PASS.
 set -uo pipefail
 
+if [[ $- == *x* ]]; then
+  set +x
+  echo "WARN: shell xtrace disabled to protect Provider-Value credentials" >&2
+fi
+
 # --- Configuration (Provider Values for this test run) ----------------------
 NAMESPACE="${CONTRACT_TEST_NAMESPACE:-ok-observability}"
 RUN_ID="${CONTRACT_TEST_RUN_ID:-$(date +%s)-$$}"
@@ -138,14 +143,34 @@ require_service() {
   kubectl -n "$2" get "svc/$1" >/dev/null 2>&1
 }
 
-# port_forward <service> <remote-port> <local-port> <health-path> [scheme] [auth]
+# curl_basic_auth <user-variable> <password-variable> <curl-arguments...>
+# Supplies Basic Auth through curl's stdin config so credentials never enter
+# curl's process arguments.
+curl_basic_auth() {
+  local user_name="$1" password_name="$2" user_config
+  shift 2
+
+  user_config="${!user_name}:${!password_name}"
+  user_config="${user_config//\\/\\\\}"
+  user_config="${user_config//\"/\\\"}"
+  user_config="${user_config//$'\t'/\\t}"
+  user_config="${user_config//$'\r'/\\r}"
+  user_config="${user_config//$'\n'/\\n}"
+
+  printf 'user = "%s"\n' "$user_config" | curl --config - "$@"
+  local pipeline_status=("${PIPESTATUS[@]}")
+  return "${pipeline_status[1]}"
+}
+
+# port_forward <service> <remote-port> <local-port> <health-path> [scheme] [user-variable] [password-variable]
 # scheme defaults to http; pass "https" for TLS services (adds -k for the
-# self-signed cert). auth is an optional "user:password" for Basic Auth
-# (OpenSearch's security plugin). Verifies the forward is actually serving
-# traffic before returning — fails loudly (not a silent, later-misdiagnosed
-# timeout) if it isn't.
+# self-signed cert). user-variable and password-variable are optional variable
+# names for Basic Auth (OpenSearch's security plugin). Verifies the forward is
+# actually serving traffic before returning — fails loudly (not a silent,
+# later-misdiagnosed timeout) if it isn't.
 port_forward() {
-  local svc="$1" remote="$2" local_port="$3" health="${4:-/}" scheme="${5:-http}" auth="${6:-}"
+  local svc="$1" remote="$2" local_port="$3" health="${4:-/}" scheme="${5:-http}"
+  local user_name="${6:-}" password_name="${7:-}"
   kubectl -n "$NAMESPACE" port-forward "svc/${svc}" "${local_port}:${remote}" \
     >/tmp/pf-"${svc}"-"${RUN_ID}".log 2>&1 &
   local pid=$!
@@ -153,10 +178,11 @@ port_forward() {
 
   local opts=(-sf -o /dev/null)
   [ "$scheme" = "https" ] && opts+=(-k)
-  [ -n "$auth" ] && opts+=(-u "$auth")
+  local health_check=(curl)
+  [ -n "$user_name" ] && health_check=(curl_basic_auth "$user_name" "$password_name")
 
   local waited=0
-  until curl "${opts[@]}" "${scheme}://localhost:${local_port}${health}" 2>/dev/null; do
+  until "${health_check[@]}" "${opts[@]}" "${scheme}://localhost:${local_port}${health}" 2>/dev/null; do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "  port-forward to svc/${svc} exited early:" >&2
       sed 's/^/    /' "/tmp/pf-${svc}-${RUN_ID}.log" >&2
@@ -170,6 +196,14 @@ port_forward() {
     sleep 1
   done
   return 0
+}
+
+opensearch_log_present() {
+  curl_basic_auth OPENSEARCH_USER OPENSEARCH_PASSWORD -sk \
+    "${OPENSEARCH_URL}/ok-observability-logs*/_search" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":{\"match_phrase\":{\"log\":\"${LOG_MARKER}\"}}}" \
+    | jq -e '.hits.total.value > 0'
 }
 
 wait_for() {
@@ -235,7 +269,7 @@ fi
 if [ -z "$OPENSEARCH_URL" ]; then
   if require_service "$OPENSEARCH_SVC" "$NAMESPACE" \
       && port_forward "$OPENSEARCH_SVC" "$OPENSEARCH_PORT" "$LOCAL_OPENSEARCH_PORT" \
-           "/_cluster/health" "https" "${OPENSEARCH_USER}:${OPENSEARCH_PASSWORD}"; then
+           "/_cluster/health" "https" OPENSEARCH_USER OPENSEARCH_PASSWORD; then
     OPENSEARCH_URL="https://localhost:${LOCAL_OPENSEARCH_PORT}"
   else
     fail "svc/${OPENSEARCH_SVC} not reachable/authenticated in namespace ${NAMESPACE} — is implementations/opensearch installed, and is OPENSEARCH_PASSWORD set? (security plugin = HTTPS + Basic Auth)"
@@ -360,12 +394,12 @@ if [ "$GRAFANA_AVAILABLE" -eq 0 ]; then
 elif [ -z "$GRAFANA_PASSWORD" ]; then
   fail "GRAFANA_PASSWORD not set — cannot authenticate to Grafana (skipping step 4 check, not a PASS)"
 else
-  ds_uid=$(curl -sf -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" "${GRAFANA_URL}/api/datasources" \
+  ds_uid=$(curl_basic_auth GRAFANA_USER GRAFANA_PASSWORD -sf "${GRAFANA_URL}/api/datasources" \
     | jq -r '.[] | select(.type=="prometheus") | .uid' | head -1)
   if [ -z "$ds_uid" ] || [ "$ds_uid" = "null" ]; then
     fail "no Prometheus datasource found in Grafana (check credentials and datasource provisioning)"
   else
-    result=$(curl -sf -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+    result=$(curl_basic_auth GRAFANA_USER GRAFANA_PASSWORD -sf \
       "${GRAFANA_URL}/api/datasources/proxy/uid/${ds_uid}/api/v1/query" \
       --data-urlencode "query=${METRIC_NAME}" | jq -e '.data.result | length > 0' 2>/dev/null)
     [ "$result" = "true" ] && ok "metric visible via Grafana datasource (uid ${ds_uid})" \
@@ -382,11 +416,7 @@ else
     --labels="app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_ID}" \
     --image=busybox --restart=Never --command -- echo "${LOG_MARKER}" >/dev/null 2>&1
 
-  if wait_for "log marker searchable in OpenSearch" bash -c \
-      "set -o pipefail; curl -sk -u '${OPENSEARCH_USER}:${OPENSEARCH_PASSWORD}' '${OPENSEARCH_URL}/ok-observability-logs*/_search' \
-         -H 'Content-Type: application/json' \
-         -d '{\"query\":{\"match_phrase\":{\"log\":\"${LOG_MARKER}\"}}}' \
-       | jq -e '.hits.total.value > 0'"; then
+  if wait_for "log marker searchable in OpenSearch" opensearch_log_present; then
     ok "log marker found in OpenSearch"
   else
     fail "log marker not found in OpenSearch within ${TIMEOUT}s (check Fluent Bit output config / index name)"
