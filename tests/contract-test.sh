@@ -162,6 +162,65 @@ curl_basic_auth() {
   return "${pipeline_status[1]}"
 }
 
+# capture_http <user-variable> <password-variable> <curl-arguments...>
+# Retains the response status and body without putting credentials in argv.
+# Its return status matches curl -f for the responses used by this gate:
+# transport failures retain curl's status, and HTTP 4xx/5xx returns 22.
+HTTP_STATUS=000
+HTTP_BODY=""
+HTTP_CURL_ERROR=""
+HTTP_CURL_RC=0
+capture_http() {
+  local user_name="$1" password_name="$2" body_file error_file
+  shift 2
+
+  HTTP_STATUS=000
+  HTTP_BODY=""
+  HTTP_CURL_ERROR=""
+  HTTP_CURL_RC=0
+
+  body_file=$(mktemp) || {
+    HTTP_CURL_RC=1
+    return 1
+  }
+  error_file=$(mktemp) || {
+    HTTP_CURL_RC=1
+    rm -f "$body_file"
+    return 1
+  }
+
+  HTTP_STATUS=$(curl_basic_auth "$user_name" "$password_name" "$@" \
+    -sS -o "$body_file" -w '%{http_code}' 2>"$error_file")
+  HTTP_CURL_RC=$?
+  HTTP_BODY=$(<"$body_file")
+  HTTP_CURL_ERROR=$(<"$error_file")
+  rm -f "$body_file" "$error_file"
+
+  [ "$HTTP_CURL_RC" -eq 0 ] || return "$HTTP_CURL_RC"
+  if [[ "$HTTP_STATUS" =~ ^[45][0-9][0-9]$ ]]; then
+    return 22
+  fi
+  return 0
+}
+
+# http_failure_detail <credential-hint> <http-200-absence-detail>
+http_failure_detail() {
+  local credential_hint="$1" absence_detail="$2"
+
+  if [ "$HTTP_CURL_RC" -ne 0 ]; then
+    printf 'transport failure (curl exit %s) — no HTTP response; check service and port-forward reachability' \
+      "$HTTP_CURL_RC"
+  elif [ "$HTTP_STATUS" = "401" ] || [ "$HTTP_STATUS" = "403" ]; then
+    printf 'authentication failed (HTTP %s) — check %s' "$HTTP_STATUS" "$credential_hint"
+  elif [[ "$HTTP_STATUS" =~ ^[45][0-9][0-9]$ ]]; then
+    printf 'request failed (HTTP %s) — check the service response and configuration' "$HTTP_STATUS"
+  elif [ "$HTTP_STATUS" = "200" ]; then
+    printf 'HTTP 200 but %s' "$absence_detail"
+  else
+    printf 'unexpected HTTP status %s — check the service response and configuration' "$HTTP_STATUS"
+  fi
+}
+
 # port_forward <service> <remote-port> <local-port> <health-path> [scheme] [user-variable] [password-variable]
 # scheme defaults to http; pass "https" for TLS services (adds -k for the
 # self-signed cert). user-variable and password-variable are optional variable
@@ -177,20 +236,31 @@ port_forward() {
   PF_PIDS+=("$pid")
 
   local opts=(-sf -o /dev/null)
-  [ "$scheme" = "https" ] && opts+=(-k)
   local health_check=(curl)
-  [ -n "$user_name" ] && health_check=(curl_basic_auth "$user_name" "$password_name")
+  if [ -n "$user_name" ]; then
+    opts=(-sS)
+    health_check=(capture_http "$user_name" "$password_name")
+  fi
+  [ "$scheme" = "https" ] && opts+=(-k)
 
   local waited=0
   until "${health_check[@]}" "${opts[@]}" "${scheme}://localhost:${local_port}${health}" 2>/dev/null; do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "  port-forward to svc/${svc} exited early:" >&2
       sed 's/^/    /' "/tmp/pf-${svc}-${RUN_ID}.log" >&2
+      if [ -n "$user_name" ]; then
+        echo "  health probe for svc/${svc} failed: $(http_failure_detail \
+          "${user_name}/${password_name}" "the health endpoint did not confirm readiness")" >&2
+      fi
       return 1
     fi
     waited=$((waited + 1))
     if [ "$waited" -ge 15 ]; then
       echo "  port-forward to svc/${svc} did not become healthy within 15s" >&2
+      if [ -n "$user_name" ]; then
+        echo "  health probe for svc/${svc} failed: $(http_failure_detail \
+          "${user_name}/${password_name}" "the health endpoint did not confirm readiness")" >&2
+      fi
       return 1
     fi
     sleep 1
@@ -199,11 +269,12 @@ port_forward() {
 }
 
 opensearch_log_present() {
-  curl_basic_auth OPENSEARCH_USER OPENSEARCH_PASSWORD -sk \
+  capture_http OPENSEARCH_USER OPENSEARCH_PASSWORD -sk \
     "${OPENSEARCH_URL}/ok-observability-logs*/_search" \
     -H 'Content-Type: application/json' \
     -d "{\"query\":{\"match_phrase\":{\"log\":\"${LOG_MARKER}\"}}}" \
-    | jq -e '.hits.total.value > 0'
+    || return $?
+  jq -e '.hits.total.value > 0' <<<"$HTTP_BODY"
 }
 
 wait_for() {
@@ -394,16 +465,26 @@ if [ "$GRAFANA_AVAILABLE" -eq 0 ]; then
 elif [ -z "$GRAFANA_PASSWORD" ]; then
   fail "GRAFANA_PASSWORD not set — cannot authenticate to Grafana (skipping step 4 check, not a PASS)"
 else
-  ds_uid=$(curl_basic_auth GRAFANA_USER GRAFANA_PASSWORD -sf "${GRAFANA_URL}/api/datasources" \
-    | jq -r '.[] | select(.type=="prometheus") | .uid' | head -1)
-  if [ -z "$ds_uid" ] || [ "$ds_uid" = "null" ]; then
-    fail "no Prometheus datasource found in Grafana (check credentials and datasource provisioning)"
+  if ! capture_http GRAFANA_USER GRAFANA_PASSWORD "${GRAFANA_URL}/api/datasources"; then
+    fail "Grafana datasource discovery failed: $(http_failure_detail \
+      "GRAFANA_USER/GRAFANA_PASSWORD" "no Prometheus datasource was found — check datasource provisioning")"
   else
-    result=$(curl_basic_auth GRAFANA_USER GRAFANA_PASSWORD -sf \
-      "${GRAFANA_URL}/api/datasources/proxy/uid/${ds_uid}/api/v1/query" \
-      --data-urlencode "query=${METRIC_NAME}" | jq -e '.data.result | length > 0' 2>/dev/null)
-    [ "$result" = "true" ] && ok "metric visible via Grafana datasource (uid ${ds_uid})" \
-      || fail "metric not visible via Grafana datasource proxy query"
+    ds_uid=$(jq -r '.[] | select(.type=="prometheus") | .uid' <<<"$HTTP_BODY" 2>/dev/null \
+      | head -1)
+    if [ -z "$ds_uid" ] || [ "$ds_uid" = "null" ]; then
+      fail "Grafana datasource discovery failed: $(http_failure_detail \
+        "GRAFANA_USER/GRAFANA_PASSWORD" "no Prometheus datasource was found — check datasource provisioning")"
+    elif ! capture_http GRAFANA_USER GRAFANA_PASSWORD \
+        "${GRAFANA_URL}/api/datasources/proxy/uid/${ds_uid}/api/v1/query" \
+        --data-urlencode "query=${METRIC_NAME}"; then
+      fail "Grafana datasource proxy query failed: $(http_failure_detail \
+        "GRAFANA_USER/GRAFANA_PASSWORD" "the synthetic metric was absent — check Prometheus ingestion and datasource configuration")"
+    elif jq -e '.data.result | length > 0' <<<"$HTTP_BODY" >/dev/null 2>&1; then
+      ok "metric visible via Grafana datasource (uid ${ds_uid})"
+    else
+      fail "Grafana datasource proxy query failed: $(http_failure_detail \
+        "GRAFANA_USER/GRAFANA_PASSWORD" "the synthetic metric was absent — check Prometheus ingestion and datasource configuration")"
+    fi
   fi
 fi
 
@@ -419,7 +500,8 @@ else
   if wait_for "log marker searchable in OpenSearch" opensearch_log_present; then
     ok "log marker found in OpenSearch"
   else
-    fail "log marker not found in OpenSearch within ${TIMEOUT}s (check Fluent Bit output config / index name)"
+    fail "OpenSearch log search failed after ${TIMEOUT}s: $(http_failure_detail \
+      "OPENSEARCH_USER/OPENSEARCH_PASSWORD" "the log marker was absent — check Fluent Bit output config and index name")"
   fi
   kubectl -n "$NAMESPACE" delete pod "log-emitter-${RUN_ID//[^a-zA-Z0-9]/-}" --ignore-not-found --wait=false >/dev/null 2>&1
 fi
