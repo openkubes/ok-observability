@@ -81,11 +81,12 @@ def main() -> None:
     if unused:
         fail(f"check supplies variables the template no longer uses: {sorted(unused)}")
 
-    if shutil.which("envsubst"):
+    envsubst = shutil.which("envsubst")
+    if envsubst:
         # Exercise the documented render path, including the explicit variable list.
         varlist = " ".join(f"${k}" for k in VALUES)
         rendered = subprocess.run(
-            ["envsubst", varlist],
+            [envsubst, varlist],
             input=raw, capture_output=True, text=True, env={**VALUES, "PATH": "/usr/bin:/bin"},
         )
         if rendered.returncode != 0:
