@@ -2,5 +2,12 @@
 *.tgz
 charts/*.lock
 Chart.lock
+# The standard profile is the authoritative, reviewed distribution unit.
+# Its exact wrapper packages are deliberately committed so a fresh Git
+# checkout can render without resolving mutable transitive repositories.
+!profiles/ok-observability-standard/charts/
+!profiles/ok-observability-standard/charts/ok-observability-prometheus-0.1.0.tgz
+!profiles/ok-observability-standard/charts/ok-observability-grafana-0.1.0.tgz
+!profiles/ok-observability-standard/charts/ok-observability-opensearch-0.1.0.tgz
 /evidence-*.md
 *.provider-values.yaml
