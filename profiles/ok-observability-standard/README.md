@@ -25,6 +25,18 @@ contract (ADR-Platform-017).
 
 ## Install
 
+The profile commits exactly three reviewed wrapper packages under `charts/`.
+Each wrapper contains its pinned upstream dependency graph. Their package
+digests and the expected offline default render are bound in
+`artifact-lock.json` and verified by `make verify-vendored-profile` (also part
+of `make verify`). A fresh Git checkout therefore does **not** run `helm
+dependency update` before rendering or installation. Updating dependencies is
+an explicit maintainer operation that must regenerate and review the packages,
+lock, and render evidence together.
+
+The package graph, trust boundary, and OK-141 equivalence proof are recorded in
+[SOURCE-PROVENANCE.md](SOURCE-PROVENANCE.md).
+
 **Namespace precondition — Pod Security Admission.** `implementations/prometheus`'s
 `node-exporter` and `implementations/opensearch`'s `fluent-bit` are
 DaemonSets that need genuine host access (`hostNetwork`, `hostPID`,
@@ -54,7 +66,6 @@ but adds cross-namespace Service/ServiceMonitor wiring complexity not
 attempted here.
 
 ```shell
-helm dependency update profiles/ok-observability-standard
 helm install ok-observability-standard profiles/ok-observability-standard \
   --namespace ok-observability \
   -f profiles/ok-observability-standard/values.yaml \

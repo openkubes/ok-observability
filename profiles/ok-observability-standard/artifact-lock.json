@@ -1,0 +1,32 @@
+{
+  "schema": "openkubes.io/ok-observability-vendored-artifacts/v1",
+  "profile": "ok-observability-standard",
+  "profileVersion": "0.1.0",
+  "packages": [
+    {
+      "name": "ok-observability-grafana",
+      "version": "0.1.0",
+      "path": "charts/ok-observability-grafana-0.1.0.tgz",
+      "sha256": "1d80132e47136ef2d0d67eca1f77d63d8a8397bff7fdc31b632cc420a277e5d8"
+    },
+    {
+      "name": "ok-observability-opensearch",
+      "version": "0.1.0",
+      "path": "charts/ok-observability-opensearch-0.1.0.tgz",
+      "sha256": "c9c8eaf2f32891cafc04eb273804fb11ed7a26c2f94b9367e4c5b879f1b609d7"
+    },
+    {
+      "name": "ok-observability-prometheus",
+      "version": "0.1.0",
+      "path": "charts/ok-observability-prometheus-0.1.0.tgz",
+      "sha256": "241acee7834df7d2de6697f505b64a0ae5105fe2771bf3d34cfca66361fe94f0"
+    }
+  ],
+  "offlineRender": {
+    "release": "ok-observability-standard",
+    "namespace": "ok-observability",
+    "kubernetesVersion": "1.36.2",
+    "includeCRDs": true,
+    "sha256": "e155c3fc25b8b61a9a9efeb76b899a9b56e0afb6781189467f6b4153adeb7bb6"
+  }
+}

@@ -6,22 +6,22 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help deps verify verify-structure verify-links verify-secrets verify-charts verify-vso-template conformance evidence
+.PHONY: help deps verify verify-structure verify-links verify-secrets verify-charts verify-vendored-profile verify-vso-template conformance evidence
 
 # The profile is a TWO-level umbrella: profiles/ok-observability-standard depends
 # on the three implementations/* wrapper charts, and each of those depends on an
-# upstream chart. `helm dependency build` only resolves ONE level, and packaging a
-# wrapper whose own charts/ is empty yields a .tgz with no upstream inside — so
-# building only the profile renders EMPTY and would install a release containing
-# nothing. Nested charts/ and Chart.lock are git-ignored, so a fresh clone always
-# starts in that state. Build the inner level first, then the profile.
+# upstream chart. The standard profile commits its three reviewed wrapper
+# packages, including their transitive charts, and verifies them against an
+# explicit artifact lock. A fresh checkout therefore renders without dependency
+# resolution. `deps` remains an explicit maintainer operation for preparing a
+# candidate package update; it is not part of the consumer/install path.
 IMPLEMENTATIONS := implementations/prometheus implementations/grafana implementations/opensearch
 PROFILE         := profiles/ok-observability-standard
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-deps: ## Build chart dependencies at BOTH umbrella levels (required before helm template/install)
+deps: ## Rebuild candidate dependencies at both umbrella levels (maintainer operation)
 	@set -euo pipefail; \
 	for impl in $(IMPLEMENTATIONS); do \
 		echo "DEPS: $$impl"; \
@@ -31,7 +31,7 @@ deps: ## Build chart dependencies at BOTH umbrella levels (required before helm 
 	helm dependency build $(PROFILE) >/dev/null || helm dependency update --skip-refresh $(PROFILE) >/dev/null; \
 	echo "DEPS: all levels built."
 
-verify: verify-structure verify-links verify-secrets verify-charts verify-vso-template ## Run all fast deterministic repository checks
+verify: verify-structure verify-links verify-secrets verify-charts verify-vendored-profile verify-vso-template ## Run all fast deterministic repository checks
 	@echo ""
 	@echo "VERIFY: all checks passed."
 
@@ -46,6 +46,9 @@ verify-secrets: ## No obvious secrets/credentials committed
 
 verify-charts: ## Structural chart check (NOT a substitute for helm lint/template — see scripts/check_charts.py)
 	@python3 scripts/check_charts.py
+
+verify-vendored-profile: ## Verify exact vendored packages and offline default render
+	@python3 scripts/check_vendored_profile.py
 
 verify-vso-template: ## VSO template must stay equivalent to the proven ok-robotics example
 	@python3 scripts/check_vso_template.py
