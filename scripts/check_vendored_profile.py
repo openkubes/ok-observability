@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,62 @@ def package_metadata(path: Path) -> tuple[str, str]:
     if "name" not in fields or "version" not in fields:
         fail(f"{path.name}: root Chart.yaml lacks name or version")
     return fields["name"], fields["version"]
+
+
+def local_helm_version(binary: str) -> str | None:
+    """Return the local helm's version, or None if it cannot be determined."""
+    try:
+        out = subprocess.run(
+            [binary, "version", "--short"], capture_output=True, text=True, timeout=60
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"v?(\d+\.\d+\.\d+)", out)
+    return match.group(1) if match else None
+
+
+def helm_command(render: dict) -> list[str]:
+    """Resolve a helm that reproduces the locked render, preferring a local match.
+
+    The locked digest is a property of the rendered output AND of the renderer that
+    produced it. Recording only the packages left `main` looking broken to anyone whose
+    helm differed, when nothing was wrong with the content -- the checker was simply being
+    run by a different program than the one the lock describes.
+
+    So the version is now recorded next to the digest it explains, and the checker obtains
+    it rather than demanding the operator install it: an exactly-matching local helm is used
+    as-is, otherwise the pinned image is run through a container runtime. The image is
+    pinned by digest, because a floating tag would reintroduce the same hole one layer down.
+    """
+    required = render.get("helmVersion")
+    if not required:
+        fail("artifact lock does not record offlineRender.helmVersion")
+
+    binary = shutil.which("helm")
+    if binary is not None and local_helm_version(binary) == required:
+        return [binary]
+
+    image = render.get("helmImage")
+    if not image:
+        fail("artifact lock does not record offlineRender.helmImage")
+    runtime = shutil.which("docker") or shutil.which("podman")
+    if runtime is None:
+        found = local_helm_version(binary) if binary else None
+        fail(
+            f"helm {required} is required to reproduce the locked render; "
+            f"local helm is {found or 'absent'} and no container runtime was found. "
+            f"Install helm {required}, or make docker/podman available to run {image}."
+        )
+
+    # Mount the repository read-only at its own path so absolute paths inside the
+    # container resolve exactly as they do outside.
+    return [
+        runtime, "run", "--rm", "-i",
+        "-v", f"{ROOT}:{ROOT}:ro",
+        "-w", str(ROOT),
+        "--entrypoint", "/usr/bin/helm",
+        image,
+    ]
 
 
 def main() -> None:
@@ -97,12 +154,10 @@ def main() -> None:
                 f"locked {item['name']}@{item['version']}"
             )
 
-    helm = shutil.which("helm")
-    if helm is None:
-        fail("helm is required to prove the offline render")
     render = lock.get("offlineRender", {})
+    helm = helm_command(render)
     command = [
-        helm,
+        *helm,
         "template",
         render["release"],
         str(PROFILE),
