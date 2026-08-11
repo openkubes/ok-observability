@@ -17,6 +17,14 @@ membership and SHA-256 identity. `scripts/check_vendored_profile.py` rejects a
 missing, additional, renamed, re-versioned, or byte-different package and then
 proves that Helm can render the profile without dependency resolution.
 
+The locked render digest is a property of the rendered output **and** of the Helm
+that produced it, so `offlineRender` records `helmVersion` and a digest-pinned
+`helmImage` beside it. The checker obtains that Helm rather than requiring it to
+be installed: a local Helm reporting the recorded version is used as-is,
+otherwise the pinned image runs under docker or podman. Before this, the version
+lived only in the prose below, and anyone whose Helm differed saw the check fail
+as though the vendored content had changed when it had not.
+
 ## OK-141 equivalence evidence
 
 The vendored profile was rendered with Helm v3.20.2, Kubernetes version 1.36.2,

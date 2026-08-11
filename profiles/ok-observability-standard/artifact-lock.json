@@ -26,6 +26,8 @@
     "release": "ok-observability-standard",
     "namespace": "ok-observability",
     "kubernetesVersion": "1.36.2",
+    "helmVersion": "3.20.2",
+    "helmImage": "alpine/helm@sha256:0dc15c3084f75cdf39823f63efbe7c21084d2dbffefce2637effc1b093485d81",
     "includeCRDs": true,
     "sha256": "e155c3fc25b8b61a9a9efeb76b899a9b56e0afb6781189467f6b4153adeb7bb6"
   }
