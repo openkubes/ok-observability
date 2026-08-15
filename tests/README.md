@@ -96,6 +96,11 @@ Cleans up all resources it creates (labeled
 `app.kubernetes.io/managed-by=ok-observability-contract-test`) on exit,
 success or failure.
 
+The script derives a deterministic, checksum-suffixed `run-id` label and
+resource names from `CONTRACT_TEST_RUN_ID`. This keeps Service names and label
+values within Kubernetes' 63-character boundary even when the supplied run ID
+is long; the unmodified run ID remains the human-facing test identity.
+
 ## Provider Values consumed by this test
 
 See `contracts/observability-capability-contract-v1.md` "Provider Values
