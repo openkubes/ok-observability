@@ -98,7 +98,29 @@ LOCAL_PUSHGATEWAY_PORT=$(( _PORT_BASE + 5 ))
 METRIC_NAME="ok_observability_contract_test_metric_${RUN_ID//[^a-zA-Z0-9]/_}"
 ALERT_TRIGGER_METRIC="ok_observability_synthetic_alert_trigger"
 LOG_MARKER="OK_OBSERVABILITY_CONTRACT_TEST_LOG_MARKER_${RUN_ID//[^a-zA-Z0-9]/_}"
-PUSHGATEWAY_NAME="ok-observability-contract-test-${RUN_ID//[^a-zA-Z0-9]/-}"
+
+# Kubernetes Service names and label values are limited to 63 characters.
+# A descriptive prefix plus an otherwise valid long RUN_ID used to exceed
+# that boundary: the ServiceMonitor could be created while the Deployment
+# and Service were rejected, producing a misleading Prometheus timeout.
+# Keep a readable prefix and add the POSIX cksum of the full RUN_ID so
+# different long IDs cannot silently collapse to the same truncated value.
+command -v cksum >/dev/null 2>&1 || {
+  echo "FAIL: required binary 'cksum' not found on PATH" >&2
+  exit 2
+}
+RUN_SLUG="${RUN_ID//[^a-zA-Z0-9]/-}"
+RUN_CKSUM="$(printf '%s' "$RUN_ID" | cksum)"
+RUN_CKSUM="${RUN_CKSUM%% *}"
+RUN_LABEL="${RUN_SLUG:0:46}-${RUN_CKSUM}"
+PUSHGATEWAY_NAME="oo-ct-${RUN_LABEL}"
+LOG_EMITTER_NAME="oo-log-${RUN_LABEL}"
+
+if [ "${#RUN_LABEL}" -gt 57 ] || [ "${#PUSHGATEWAY_NAME}" -gt 63 ] \
+    || [ "${#LOG_EMITTER_NAME}" -gt 63 ]; then
+  echo "FAIL: internal bounded-name invariant exceeded" >&2
+  exit 2
+fi
 
 PF_PIDS=()
 FAILED=0
@@ -123,7 +145,7 @@ cleanup() {
   # by exactly this leak on ok-shared (no ServiceMonitor CRD there).
   for kind in deploy svc job pod configmap servicemonitor; do
     kubectl -n "$NAMESPACE" delete "$kind" \
-      -l "app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_ID}" \
+      -l "app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_LABEL}" \
       --ignore-not-found --wait=false >/dev/null 2>&1 || true
   done
   exit "$code"
@@ -367,7 +389,7 @@ metadata:
   name: ${PUSHGATEWAY_NAME}
   labels:
     app.kubernetes.io/managed-by: ok-observability-contract-test
-    run-id: "${RUN_ID}"
+    run-id: "${RUN_LABEL}"
 spec:
   replicas: 1
   selector:
@@ -395,7 +417,7 @@ metadata:
     # trigger command substitution.
     app: "${PUSHGATEWAY_NAME}"
     app.kubernetes.io/managed-by: ok-observability-contract-test
-    run-id: "${RUN_ID}"
+    run-id: "${RUN_LABEL}"
 spec:
   selector: {app: "${PUSHGATEWAY_NAME}"}
   ports: [{port: 9091, targetPort: 9091, name: http}]
@@ -406,7 +428,7 @@ metadata:
   name: ${PUSHGATEWAY_NAME}
   labels:
     app.kubernetes.io/managed-by: ok-observability-contract-test
-    run-id: "${RUN_ID}"
+    run-id: "${RUN_LABEL}"
     release: ok-observability
 spec:
   selector:
@@ -493,8 +515,8 @@ step 5 "emit synthetic log line, verify searchable in OpenSearch"
 if [ "$OS_AVAILABLE" -eq 0 ]; then
   fail "skipped — OpenSearch was not reachable (see precondition failure above)"
 else
-  kubectl -n "$NAMESPACE" run "log-emitter-${RUN_ID//[^a-zA-Z0-9]/-}" \
-    --labels="app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_ID}" \
+  kubectl -n "$NAMESPACE" run "$LOG_EMITTER_NAME" \
+    --labels="app.kubernetes.io/managed-by=ok-observability-contract-test,run-id=${RUN_LABEL}" \
     --image=busybox --restart=Never --command -- echo "${LOG_MARKER}" >/dev/null 2>&1
 
   if wait_for "log marker searchable in OpenSearch" opensearch_log_present; then
@@ -503,7 +525,7 @@ else
     fail "OpenSearch log search failed after ${TIMEOUT}s: $(http_failure_detail \
       "OPENSEARCH_USER/OPENSEARCH_PASSWORD" "the log marker was absent — check Fluent Bit output config and index name")"
   fi
-  kubectl -n "$NAMESPACE" delete pod "log-emitter-${RUN_ID//[^a-zA-Z0-9]/-}" --ignore-not-found --wait=false >/dev/null 2>&1
+  kubectl -n "$NAMESPACE" delete pod "$LOG_EMITTER_NAME" --ignore-not-found --wait=false >/dev/null 2>&1
 fi
 
 # --- Step 6: synthetic alert, verify delivery ----------------------------
